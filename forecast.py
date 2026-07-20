@@ -43,9 +43,10 @@ TRUST IT THIS MUCH:
   * Small-n sources (< ~25 reports) are suggestive, not solid (flagged below).
   * POOLING: sources within --pool-radius km (default 25) borrow correlation
     strength from each other. Each source's per-window season-controlled r is
-    shrunk toward its neighbors by empirical Bayes (DerSimonian-Laird): a group
-    whose members agree pools hard, a group that disagrees barely pools, and a
-    small-n source leans on neighbors more than a data-rich one does. Geography
+    shrunk toward its neighbors by empirical Bayes (posterior-mean between-source
+    variance under a weakly-informative half-Cauchy prior): a group whose members
+    agree pools hard, a group that disagrees barely pools, and a small-n source
+    leans on neighbors more than a data-rich one does at every window. Geography
     only picks the neighborhood; the data decide how much to borrow. --no-pool
     turns it off. Only the correlation is pooled -- %-dry and the flow numbers
     stay each source's own.
@@ -230,30 +231,68 @@ def _fisher_z(r):
     r = max(-0.999, min(0.999, r))     # keep atanh finite at |r|->1
     return math.atanh(r)
 
-def _pool_window(items):
-    """Empirical-Bayes (DerSimonian-Laird random-effects) shrinkage of a group of
-    correlations toward their group mean, on the Fisher-z scale. `items` is a list
-    of (r, n) for the sources in one neighborhood at one rain window; returns a list
-    of (pooled_r, borrowed_fraction) aligned to it.
+def _median(xs):
+    ys = sorted(xs)
+    m = len(ys) // 2
+    return ys[m] if len(ys) % 2 else (ys[m - 1] + ys[m]) / 2.0
 
-    tau^2 (the between-source variance) is estimated from the group itself: when the
-    members disagree it is large, so every member keeps its own estimate (borrows
-    little); when they agree it is ~0, so members are pulled hard to the mean. Within
-    that, a small-n member has a larger sampling variance and is pulled more than a
-    data-rich one. Nobody sets a shrinkage constant -- the data set it."""
+# Weakly-informative floor for the half-Cauchy prior scale on the between-source
+# SD (Fisher-z units). ~0.25 in z is ~0.24 in r -- a modest "sources this close
+# can plausibly differ this much" statement. It only keeps tau^2 from collapsing
+# to exactly 0 (which would force all-or-nothing pooling with tiny groups); the
+# data push the scale higher when neighbors genuinely disagree. Tune via PR.
+POOL_PRIOR_SD_FLOOR = 0.25
+
+def _pool_window(items):
+    """Empirical-Bayes shrinkage of a group of correlations toward their group mean,
+    on the Fisher-z scale. `items` is a list of (r, n) for the sources in one
+    neighborhood at one rain window; returns a list of (pooled_r, borrowed_fraction)
+    aligned to it.
+
+    The between-source variance tau^2 is the knob that decides how much to pool: large
+    tau^2 (neighbors disagree) -> everyone keeps their own estimate; small tau^2
+    (neighbors agree) -> members are pulled to the mean, and within that a small-n
+    member (larger sampling variance) is pulled more than a data-rich one. Nobody sets
+    a shrinkage constant -- the data set it.
+
+    Rather than a point estimate of tau^2 (DerSimonian-Laird), which with tiny groups
+    is unstable and often truncates to exactly 0 (forcing 100% pooling and ignoring n),
+    we put a weakly-informative half-Cauchy prior on the between-source SD and use the
+    POSTERIOR MEAN of tau^2 over a 1-D grid of the REML marginal likelihood. That mean
+    is always > 0, so pooling stays graded and n-dependent at every window, yet still
+    grows large -- little pooling -- when the group is genuinely heterogeneous."""
     k = len(items)
     if k < 2:
         return [(items[0][0], 0.0)]
     z = [_fisher_z(r) for r, _ in items]
     s2 = [1.0 / max(n - 3, 1) for _, n in items]        # within-source var of z
-    w = [1.0 / v for v in s2]
-    sw = sum(w)
-    mu_fe = sum(wi * zi for wi, zi in zip(w, z)) / sw   # fixed-effect (precision) mean
-    Q = sum(wi * (zi - mu_fe) ** 2 for wi, zi in zip(w, z))   # Cochran's heterogeneity
-    C = sw - sum(wi * wi for wi in w) / sw
-    tau2 = max(0.0, (Q - (k - 1)) / C) if C > 1e-12 else 0.0
+    # Half-Cauchy prior scale A: data-driven (observed z-spread and typical sampling
+    # SD), floored so a coherent group still can't collapse tau^2 to 0.
+    zbar = sum(z) / k
+    sd_z = (sum((zi - zbar) ** 2 for zi in z) / k) ** 0.5
+    A = max(sd_z, math.sqrt(_median(s2)), POOL_PRIOR_SD_FLOOR)
+    tau_hi = max(5 * A, 5 * sd_z, 1.0)                  # grid upper bound for tau
+    G = 400
+    lls, priors, t2s = [], [], []
+    for g in range(G + 1):
+        tau = tau_hi * g / G
+        t2 = tau * tau
+        w = [1.0 / (v + t2) for v in s2]
+        sw = sum(w)
+        mu = sum(wi * zi for wi, zi in zip(w, z)) / sw
+        # REML marginal log-likelihood for the variance component (mu profiled out)
+        ll = (-0.5 * sum(math.log(v + t2) for v in s2)
+              - 0.5 * math.log(sw)
+              - 0.5 * sum(wi * (zi - mu) ** 2 for wi, zi in zip(w, z)))
+        lls.append(ll)
+        priors.append(1.0 / (1.0 + (tau / A) ** 2))     # half-Cauchy(0, A) kernel
+        t2s.append(t2)
+    m = max(lls)                                         # log-sum-exp stabilization
+    wts = [math.exp(ll - m) * pr for ll, pr in zip(lls, priors)]
+    Z = sum(wts) or 1.0
+    tau2 = sum(wt * t2 for wt, t2 in zip(wts, t2s)) / Z  # posterior mean of tau^2 (> 0)
     wr = [1.0 / (v + tau2) for v in s2]
-    mu_re = sum(wi * zi for wi, zi in zip(wr, z)) / sum(wr)   # random-effects mean
+    mu_re = sum(wi * zi for wi, zi in zip(wr, z)) / sum(wr)
     out = []
     for zi, v in zip(z, s2):
         own = tau2 / (tau2 + v)          # weight kept on the source's own estimate
