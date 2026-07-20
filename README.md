@@ -86,15 +86,20 @@ planned feature — see roadmap.
    radar — [MRMS via IEM](https://mesonet.agron.iastate.edu/) or the
    [NWS AHPS precip analysis](https://water.weather.gov/precip/). This is the
    *base rate*; radar is *this week*.
-2. **Season and rain are entangled** — more reports in wet, cool months, so v1's
-   raw correlations are somewhat flattered. Day-of-year control is the top TODO.
+2. **Season and rain are entangled** — more reports in wet, cool months. The tool
+   controls for this: it removes the day-of-year cycle (annual-harmonic
+   regression, learned per-site so it's hemisphere-correct) and reports a
+   **season-controlled r** beside each raw r. Classification and the headline key
+   off the controlled one. Watch the gap — it can expose a big raw correlation as
+   mostly seasonal (see the Mazatzal example: Castersen's raw .72 → ~.09).
 3. **Scores** are a judgment mapping of free-text reports.
 4. **Small-n sources (<25 reports)** are suggestive, not solid (flagged in output).
 
 ## Roadmap
 
 - [ ] **Pooling / borrow-strength** for small-n sources (proximity + type group).
-- [ ] **Season control** (day-of-year) to isolate the rain signal from the calendar.
+- [x] **Season control** (day-of-year, annual harmonics) — reports a
+      season-controlled r beside raw; classification keys off it. `--harmonics=N`.
 - [ ] **Higher-res precip** option (PRISM / Daymet, or radar QPE for monsoon).
 - [ ] **Log-your-own-visits** so each source sharpens over time.
 - [ ] **Table export** (Markdown/HTML) for trip notes.
