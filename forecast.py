@@ -25,6 +25,8 @@ Usage:
     python3 forecast.py a.csv b.csv                     # combine several files
     python3 forecast.py sources.csv --asof 2026-08-15   # read for a future date
     python3 forecast.py sources.csv --no-cache          # force precip re-fetch
+    python3 forecast.py area.csv --pool-radius 15       # neighbor radius km (pooling)
+    python3 forecast.py area.csv --no-pool              # analyze each source alone
 
 Pure standard library. No pip installs. Precip: Open-Meteo ERA5 archive (free).
 
@@ -39,7 +41,15 @@ TRUST IT THIS MUCH:
     and the analog read all key off the controlled r. It can collapse a small-n
     source's headline (e.g. Castersen's raw .72/180d -> ~.09 controlled).
   * Small-n sources (< ~25 reports) are suggestive, not solid (flagged below).
-    Borrowing strength from data-rich neighbors is the next planned feature.
+  * POOLING: sources within --pool-radius km (default 25) borrow correlation
+    strength from each other. Each source's per-window season-controlled r is
+    shrunk toward its neighbors by empirical Bayes (posterior-mean between-source
+    variance under a weakly-informative half-Cauchy prior): a group whose members
+    agree pools hard, a group that disagrees barely pools, and a small-n source
+    leans on neighbors more than a data-rich one does at every window. Geography
+    only picks the neighborhood; the data decide how much to borrow. --no-pool
+    turns it off. Only the correlation is pooled -- %-dry and the flow numbers
+    stay each source's own.
 """
 import csv, json, math, os, sys, urllib.request
 from datetime import date, timedelta
@@ -49,6 +59,7 @@ CACHE_DIR = os.path.join(HERE, ".cache")
 WINDOWS = [30, 60, 90, 180, 270, 365]
 ERA5_LAG_DAYS = 6
 PRECIP_START = "2007-01-01"
+POOL_RADIUS_KM = 25.0   # default neighborhood radius for pooling (see pool_controlled)
 
 # --------------------------------------------------------------------------- #
 # Input: normalized CSV -> sources
@@ -202,6 +213,107 @@ def survival_note(r_raw, r_ctrl):
     return "mostly a seasonal artifact -> weak true rain signal"
 
 # --------------------------------------------------------------------------- #
+# Pooling: let each source borrow correlation strength from nearby sources.
+# Geography (haversine radius) only picks the neighborhood; how much a source
+# actually borrows is decided by the data via empirical Bayes, so a group whose
+# members disagree pools little and a coherent group pools hard. The engine only
+# ever sees lat/lon + flow + precip -- it never assumes WHY two sources behave
+# alike, only measures whether their rain responses are consistent.
+# --------------------------------------------------------------------------- #
+def _haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi, dlmb = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * R * math.asin(min(1.0, math.sqrt(a)))
+
+def _fisher_z(r):
+    r = max(-0.999, min(0.999, r))     # keep atanh finite at |r|->1
+    return math.atanh(r)
+
+def _median(xs):
+    ys = sorted(xs)
+    m = len(ys) // 2
+    return ys[m] if len(ys) % 2 else (ys[m - 1] + ys[m]) / 2.0
+
+# Weakly-informative floor for the half-Cauchy prior scale on the between-source
+# SD (Fisher-z units). ~0.25 in z is ~0.24 in r -- a modest "sources this close
+# can plausibly differ this much" statement. It only keeps tau^2 from collapsing
+# to exactly 0 (which would force all-or-nothing pooling with tiny groups); the
+# data push the scale higher when neighbors genuinely disagree. Tune via PR.
+POOL_PRIOR_SD_FLOOR = 0.25
+
+def _pool_window(items):
+    """Empirical-Bayes shrinkage of a group of correlations toward their group mean,
+    on the Fisher-z scale. `items` is a list of (r, n) for the sources in one
+    neighborhood at one rain window; returns a list of (pooled_r, borrowed_fraction)
+    aligned to it.
+
+    The between-source variance tau^2 is the knob that decides how much to pool: large
+    tau^2 (neighbors disagree) -> everyone keeps their own estimate; small tau^2
+    (neighbors agree) -> members are pulled to the mean, and within that a small-n
+    member (larger sampling variance) is pulled more than a data-rich one. Nobody sets
+    a shrinkage constant -- the data set it.
+
+    Rather than a point estimate of tau^2 (DerSimonian-Laird), which with tiny groups
+    is unstable and often truncates to exactly 0 (forcing 100% pooling and ignoring n),
+    we put a weakly-informative half-Cauchy prior on the between-source SD and use the
+    POSTERIOR MEAN of tau^2 over a 1-D grid of the REML marginal likelihood. That mean
+    is always > 0, so pooling stays graded and n-dependent at every window, yet still
+    grows large -- little pooling -- when the group is genuinely heterogeneous."""
+    k = len(items)
+    if k < 2:
+        return [(items[0][0], 0.0)]
+    z = [_fisher_z(r) for r, _ in items]
+    s2 = [1.0 / max(n - 3, 1) for _, n in items]        # within-source var of z
+    # Half-Cauchy prior scale A: data-driven (observed z-spread and typical sampling
+    # SD), floored so a coherent group still can't collapse tau^2 to 0.
+    zbar = sum(z) / k
+    sd_z = (sum((zi - zbar) ** 2 for zi in z) / k) ** 0.5
+    A = max(sd_z, math.sqrt(_median(s2)), POOL_PRIOR_SD_FLOOR)
+    tau_hi = max(5 * A, 5 * sd_z, 1.0)                  # grid upper bound for tau
+    G = 400
+    lls, priors, t2s = [], [], []
+    for g in range(G + 1):
+        tau = tau_hi * g / G
+        t2 = tau * tau
+        w = [1.0 / (v + t2) for v in s2]
+        sw = sum(w)
+        mu = sum(wi * zi for wi, zi in zip(w, z)) / sw
+        # REML marginal log-likelihood for the variance component (mu profiled out)
+        ll = (-0.5 * sum(math.log(v + t2) for v in s2)
+              - 0.5 * math.log(sw)
+              - 0.5 * sum(wi * (zi - mu) ** 2 for wi, zi in zip(w, z)))
+        lls.append(ll)
+        priors.append(1.0 / (1.0 + (tau / A) ** 2))     # half-Cauchy(0, A) kernel
+        t2s.append(t2)
+    m = max(lls)                                         # log-sum-exp stabilization
+    wts = [math.exp(ll - m) * pr for ll, pr in zip(lls, priors)]
+    Z = sum(wts) or 1.0
+    tau2 = sum(wt * t2 for wt, t2 in zip(wts, t2s)) / Z  # posterior mean of tau^2 (> 0)
+    wr = [1.0 / (v + tau2) for v in s2]
+    mu_re = sum(wi * zi for wi, zi in zip(wr, z)) / sum(wr)
+    out = []
+    for zi, v in zip(z, s2):
+        own = tau2 / (tau2 + v)          # weight kept on the source's own estimate
+        out.append((math.tanh(own * zi + (1 - own) * mu_re), 1 - own))
+    return out
+
+def pool_controlled(bases, radius_km):
+    """In place: shrink every source's per-window season-controlled r toward the
+    sources within radius_km (its neighborhood, itself included). Reads each source's
+    own `ctrl` (never the pooled result), so processing order does not matter."""
+    windows = [f"{w}d" for w in WINDOWS]
+    for b in bases:
+        grp = [o for o in bases
+               if _haversine_km(b["lat"], b["lon"], o["lat"], o["lon"]) <= radius_km]
+        i = grp.index(b)
+        for wname in windows:
+            pooled = _pool_window([(o["ctrl"][wname], o["n"]) for o in grp])
+            b["pooled_ctrl"][wname], b["borrowed"][wname] = pooled[i]
+        b["group_n"] = len(grp)
+
+# --------------------------------------------------------------------------- #
 # Analysis + reporting (scores are 0.0 .. 1.0)
 # --------------------------------------------------------------------------- #
 def classify(pct_dry, best_window):
@@ -218,7 +330,11 @@ def running_phrase(pred):
     if pred < 0.70: return "Likely flowing (moderate)"
     return "Likely flowing well"
 
-def analyze(src, asof, use_cache=True, n_harm=1):
+def analyze_base(src, asof, use_cache=True, n_harm=1):
+    """Per-source pass: precip -> raw + season-controlled per-window r vectors, plus
+    the machinery finalize() needs. Stops BEFORE choosing a best window, so pooling
+    can adjust the controlled r first. `pooled_ctrl` starts equal to the source's own
+    `ctrl` (i.e. no neighbors); pool_controlled() overwrites it when pooling runs."""
     data = fetch_precip(src["lat"], src["lon"],
                         min(asof, date.today() - timedelta(days=ERA5_LAG_DAYS)), use_cache)
     idx = build_precip_index(data)
@@ -230,33 +346,52 @@ def analyze(src, asof, use_cache=True, n_harm=1):
         return None
     pct_dry = round(100 * sum(1 for v in y if v == 0) / n)
     feats = {f"{w}d": [window_sum(idx, d, w) for d, _ in recs] for w in WINDOWS}
-    cors = sorted(((spearman(xs, y), name) for name, xs in feats.items()),
-                  key=lambda t: -abs(t[0]))
-    raw = {name: r for r, name in cors}
-    # season-controlled correlations (day-of-year cycle removed) -- THE HEADLINE:
-    # classification + best-predictor + the analog read all key off these, so we
-    # lead with the trustworthy number, not the season-flattered raw one.
+    raw = {name: spearman(xs, y) for name, xs in feats.items()}
+    # season-controlled correlations (day-of-year cycle removed) -- the trustworthy
+    # numbers. Classification, best-predictor, and the analog read all key off these
+    # (pooled if pooling is on), never the season-flattered raw r.
     ctrl = {name: season_controlled_r(dates, y, xs, n_harm) for name, xs in feats.items()}
-    ctrl_cors = sorted(ctrl.items(), key=lambda t: -abs(t[1]))
-    best, best_ctrl_r = ctrl_cors[0]
-    best_w = int(best[:-1])
-    best_raw_r = raw[best]
-    asof_eff = min(asof, idx["last"])
-    curval = window_sum(idx, asof_eff, best_w)
-    hist = sorted(((window_sum(idx, d, best_w), s) for d, s in recs),
-                  key=lambda t: abs(t[0] - curval))[:5]
-    pred = sum(s for _, s in hist) / len(hist)
     bym = {}
     for d, s in recs:
         bym.setdefault(d.month, []).append(s)
     return {"name": src["name"], "lat": src["lat"], "lon": src["lon"],
             "n": n, "pct_dry": pct_dry, "mean": sum(y) / n,
-            "annual_precip": idx["annual"], "cors": cors, "best": best,
-            "best_ctrl_r": best_ctrl_r, "best_raw_r": best_raw_r,
-            "type": classify(pct_dry, best_w),
-            "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": n_harm,
-            "ctrl_cors": ctrl_cors,
+            "annual_precip": idx["annual"], "raw": raw, "ctrl": ctrl,
+            "pooled_ctrl": dict(ctrl), "borrowed": {k: 0.0 for k in ctrl},
+            "group_n": 1, "n_harm": n_harm,
+            "idx": idx, "recs": recs, "asof_req": asof,
             "by_month": {m: sum(v) / len(v) for m, v in sorted(bym.items())}}
+
+def finalize(b):
+    """Turn a (possibly pooled) base into the presentation dict: pick the best window
+    from the pooled controlled r, then read classification + nearest-analog off it.
+    The per-window table still shows the source's OWN raw/controlled r for honesty;
+    only the >> best-predictor decision and verdict use the pooled value."""
+    ctrl_cors = sorted(b["pooled_ctrl"].items(), key=lambda t: -abs(t[1]))
+    best, best_ctrl_r = ctrl_cors[0]
+    best_w = int(best[:-1])
+    idx, recs = b["idx"], b["recs"]
+    asof_eff = min(b["asof_req"], idx["last"])
+    curval = window_sum(idx, asof_eff, best_w)
+    hist = sorted(((window_sum(idx, d, best_w), s) for d, s in recs),
+                  key=lambda t: abs(t[0] - curval))[:5]
+    pred = sum(s for _, s in hist) / len(hist)
+    return {"name": b["name"], "lat": b["lat"], "lon": b["lon"],
+            "n": b["n"], "pct_dry": b["pct_dry"], "mean": b["mean"],
+            "annual_precip": b["annual_precip"],
+            "cors": sorted(((r, name) for name, r in b["raw"].items()), key=lambda t: -abs(t[0])),
+            "ctrl_cors": sorted(b["ctrl"].items(), key=lambda t: -abs(t[1])),   # OWN, for the table
+            "best": best, "best_ctrl_r": best_ctrl_r,                           # POOLED, drives verdict
+            "best_raw_r": b["raw"][best], "best_own_ctrl_r": b["ctrl"][best],
+            "borrowed_at_best": b["borrowed"][best], "group_n": b["group_n"],
+            "type": classify(b["pct_dry"], best_w),
+            "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": b["n_harm"],
+            "by_month": b["by_month"]}
+
+def analyze(src, asof, use_cache=True, n_harm=1):
+    """Single-source convenience (no pooling): base pass then finalize."""
+    b = analyze_base(src, asof, use_cache, n_harm)
+    return None if b is None else finalize(b)
 
 def print_source(a):
     print(f"\n{'='*74}\n{a['name']}   ({a['lat']:.5f}, {a['lon']:.5f})")
@@ -270,9 +405,17 @@ def print_source(a):
     for r, name in a["cors"]:
         print(f"     {name:5s} raw r={r:+.2f}  |  season-ctrl r={ctrl[name]:+.2f}  "
               f"{'#' * int(round(abs(ctrl[name]) * 20))}")
-    print(f"  >> best predictor (season-controlled): {a['best']} rain  "
-          f"r={a['best_ctrl_r']:+.2f}  (raw r={a['best_raw_r']:+.2f}, k={a['n_harm']} harmonic)")
-    print(f"     signal check: {survival_note(a['best_raw_r'], a['best_ctrl_r'])}")
+    if a["group_n"] > 1:
+        print(f"  >> best predictor (pooled, season-controlled): {a['best']} rain  "
+              f"r={a['best_ctrl_r']:+.2f}")
+        print(f"     borrowed {a['borrowed_at_best']*100:.0f}% from {a['group_n']-1} "
+              f"neighbor(s) in range; this source's own r={a['best_own_ctrl_r']:+.2f} "
+              f"(raw {a['best_raw_r']:+.2f}, k={a['n_harm']} harmonic)")
+        print(f"     signal check (own data): {survival_note(a['best_raw_r'], a['best_own_ctrl_r'])}")
+    else:
+        print(f"  >> best predictor (season-controlled): {a['best']} rain  "
+              f"r={a['best_ctrl_r']:+.2f}  (raw r={a['best_raw_r']:+.2f}, k={a['n_harm']} harmonic)")
+        print(f"     signal check: {survival_note(a['best_raw_r'], a['best_ctrl_r'])}")
     print(f"\n  AS OF {a['asof']}:  {a['best']} rain = {a['curval']:.2f}\"  ->  "
           f"nearest-analog flow ~{a['pred']:.2f} (0-1)")
     print(f"  VERDICT: {running_phrase(a['pred'])}"
@@ -281,17 +424,20 @@ def print_source(a):
 def print_table(rows):
     print(f"\n{'='*74}\nSUMMARY  (most reliable first)\n")
     rows = sorted(rows, key=lambda a: a["pct_dry"])
-    h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}   {'AS-OF READ'}"
+    h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}{'POOL':>6}   {'AS-OF READ'}"
     print(h); print("-" * len(h))
     for a in rows:
         nm = (a["name"][:24] + "..") if len(a["name"]) > 26 else a["name"]
-        print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}{a['best_ctrl_r']:>+7.2f}   "
+        pool = (f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-").rjust(6)
+        print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}{a['best_ctrl_r']:>+7.2f}{pool}   "
               f"{running_phrase(a['pred'])}")
-    print("\nr* = season-controlled Spearman (day-of-year removed) -- the trustworthy one.")
+    print("\nr* = season-controlled Spearman (day-of-year removed), POOLED toward nearby")
+    print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
+    print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
     print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
     print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
 
-_VALUE_FLAGS = ("--asof", "--harmonics")
+_VALUE_FLAGS = ("--asof", "--harmonics", "--pool-radius")
 def _is_flag_value(argv, a):
     """True if `a` is the space-separated value following a value-taking flag."""
     for i, x in enumerate(argv):
@@ -303,7 +449,9 @@ def main(argv):
     files = [a for a in argv if not a.startswith("--") and not _is_flag_value(argv, a)]
     asof = date.today()
     use_cache = "--no-cache" not in argv
+    do_pool = "--no-pool" not in argv
     n_harm = 1
+    radius_km = POOL_RADIUS_KM
     for i, a in enumerate(argv):
         if a == "--asof":
             asof = date.fromisoformat(argv[i + 1])
@@ -313,22 +461,33 @@ def main(argv):
             n_harm = int(argv[i + 1])
         elif a.startswith("--harmonics="):
             n_harm = int(a.split("=", 1)[1])
+        elif a == "--pool-radius":
+            radius_km = float(argv[i + 1])
+        elif a.startswith("--pool-radius="):
+            radius_km = float(a.split("=", 1)[1])
     if not files:
         print(__doc__); return 1
     try:
         sources = load_sources(files)
     except Exception as e:
         print(f"[error] {e}"); return 2
-    rows = []
+    # Pass 1: per-source base (fetch precip + per-window r vectors), no window chosen yet.
+    bases = []
     for src in sources:
         try:
-            a = analyze(src, asof, use_cache, n_harm)
-            if a is None:
+            b = analyze_base(src, asof, use_cache, n_harm)
+            if b is None:
                 print(f"[skip] {src['name']}: no reports within precip range"); continue
-            print_source(a)
-            rows.append(a)
+            bases.append(b)
         except Exception as e:
             print(f"[error] {src['name']}: {e}")
+    # Pass 2: pool the season-controlled r across nearby sources (needs >=2 to borrow).
+    if do_pool and len(bases) > 1:
+        pool_controlled(bases, radius_km)
+    # Pass 3: finalize (best window / class / analog read off the pooled r) + report.
+    rows = [finalize(b) for b in bases]
+    for a in rows:
+        print_source(a)
     if len(rows) > 1:
         print_table(rows)
     return 0

@@ -31,6 +31,8 @@ python3 forecast.py examples/mazatzal-wilderness.csv          # one file, many s
 python3 forecast.py a.csv b.csv                               # combine files
 python3 forecast.py sources.csv --asof 2026-08-15            # read for a future date
 python3 forecast.py sources.csv --no-cache                    # force precip re-fetch
+python3 forecast.py area.csv --pool-radius 15                 # neighbor radius km (pooling)
+python3 forecast.py area.csv --no-pool                        # analyze each source alone
 ```
 Pure Python standard library — no `pip install`. Precip comes from the free
 [Open-Meteo ERA5 archive](https://open-meteo.com/) (no key), cached in `.cache/`.
@@ -69,15 +71,38 @@ report language to a `score` lives in the **skill's rubric** (see
   30/60/90/180/270/365 days. Highest |r| = the source's effective "memory."
 - **AS-OF READ** — nearest-analog estimate: current value of the best window vs.
   the 5 historical reports with the most similar antecedent rain.
+- **r\*** (summary table) — the season-controlled correlation, *pooled* toward
+  nearby sources where they agree; this is the number the verdict keys off.
+- **POOL** (summary table) — what fraction of `r*` was borrowed from neighbors
+  (`-` = no neighbors in range, or `--no-pool`). Each source's per-window table
+  still shows its **own** raw and season-controlled r for full transparency.
 
-## Multiple sources & the small-n problem
+## Multiple sources & pooling
 
 Multi-source is native — one CSV can hold many sources and the engine tables them
-together. A data-poor source (like a seep with only ~15 reports) forecasts poorly
-alone, but **nearby sources of the same type inform it.** For now, include the
-neighbors and lean on the better-sampled ones of the same TYPE when interpreting.
-Automated **pooling** (borrow strength across a proximity+type group) is the next
-planned feature — see roadmap.
+together. A data-poor source (a seep with only ~15 reports) forecasts poorly
+alone, so the engine lets it **borrow correlation strength from nearby sources.**
+
+**How pooling works.** Any sources within `--pool-radius` km of each other (default
+`25`, straight-line) form a neighborhood. Each source's season-controlled rain
+correlation is then shrunk toward its neighbors' — but *how much* is decided by the
+data, not by us:
+
+- Neighbors that **agree** → pool hard; neighbors that **disagree** → barely pool
+  (a buffered spring next to a flashy falls keeps its own signal).
+- A **small-n** source leans on its neighbors more than a data-rich one does.
+
+Nobody sets a shrinkage dial — it falls out of empirical Bayes (the posterior mean
+of the between-source variance under a weak prior). The engine only ever sees
+lat/lon + flow + precip, so pooling is purely a **geographic** prior: it never
+assumes *why* two sources behave alike, only measures whether their rain responses
+are consistent. Only the correlation is pooled — each source's `%-dry` and flow
+numbers stay its own.
+
+In the Mazatzal example, tiny **Castersen (n=15)** borrows ~65% of its signal from
+its neighbors and gets rescued onto the rain window they validate, while buffered
+**Chilson (n=58)** and well-sampled **Big Kahuna (n=160)** barely move. Pass
+`--no-pool` to switch it off and read every source in isolation.
 
 ## Trust it this much (limitations)
 
@@ -97,7 +122,8 @@ planned feature — see roadmap.
 
 ## Roadmap
 
-- [ ] **Pooling / borrow-strength** for small-n sources (proximity + type group).
+- [x] **Pooling / borrow-strength** for small-n sources — proximity neighborhood
+      (`--pool-radius`), data-driven empirical-Bayes shrinkage. `--no-pool` to disable.
 - [x] **Season control** (day-of-year, annual harmonics) — reports a
       season-controlled r beside raw; classification keys off it. `--harmonics=N`.
 - [ ] **Higher-res precip** option (PRISM / Daymet, or radar QPE for monsoon).
