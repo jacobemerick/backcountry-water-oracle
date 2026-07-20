@@ -1,0 +1,728 @@
+
+Big Kahuna Falls - Mazatzal Wilderness	
+Jan	Feb	Mar	Apr	May	Jun	Jul	Aug	Sep	Oct	Nov	Dec	All
+13	13	27	23	15	9		6	17	14	14	8	▲
+34.08716, -111.45293 Gila, AZ
+
+2026-06-30
+DesertNymph
+2026-06-30	DesertNymph	triplogDry 
+
+2026-06-30
+jacobemerick
+2026-06-30	jacobemerick	triplogDry 
+
+2026-06-30
+00blackout
+2026-06-30	00blackout	triplogDry 
+
+2026-05-15
+jacobemerick
+2026-05-15	jacobemerick	triplogPools to trickle 
+Barely a trickle over the falls. Small stagnant pools under the falls above the trail.
+
+2026-04-10
+John10s
+2026-04-10	John10s	triplogLight flow 
+Recorded on Route Scout - GPS Topo Mapper Pools and light flow at the falls, dry trail crossing
+
+2026-04-10
+joebartels
+2026-04-10	joebartels	triplogLight flow 
+Recorded on Route Scout - GPS Topo Mapper No water at the crossing but plenty very nearby up canyon
+
+2026-02-07
+kphoenix
+2026-02-07	kphoenix	triplogHeavy flow 
+
+2026-01-18
+diablo
+2026-01-18	diablo	triplogMedium flow 
+
+2026-01-14
+DesertNymph
+2026-01-14	DesertNymph	triplogHeavy flow 
+
+2026-01-14
+00blackout
+2026-01-14	00blackout	triplogHeavy flow 
+
+2025-12-13
+chumley
+2025-12-13	chumley	triplogLight flow 
+
+2025-12-06
+jacobemerick
+2025-12-06	jacobemerick	triplogMedium flow 
+Still big flow, trail crossing is a little rock-hoppy.
+
+2025-11-29
+kphoenix
+2025-11-29	kphoenix	triplogHeavy flow 
+
+2025-11-28
+jacobemerick
+2025-11-28	jacobemerick	triplogMedium flow 
+
+2025-11-17
+kphoenix
+2025-11-17	kphoenix	triplogLight flow 
+Can hear the waterfall running but no flow over the trail. Pretty sure you could get some water with a bit of effort
+
+2025-11-15
+jacobemerick
+2025-11-15	jacobemerick	triplogLight flow 
+Good flow down the falls, but puddles near the trail are dried up.
+
+2025-10-25
+diablo
+2025-10-25	diablo	triplogLight flow 
+
+2025-10-16
+jacobemerick
+2025-10-16	jacobemerick	triplogMedium flow 
+
+2025-10-15
+John10s
+2025-10-15	John10s	triplogMedium flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2025-10-12
+DesertNymph
+2025-10-12	DesertNymph	triplogHeavy flow 
+
+2025-10-12
+00blackout
+2025-10-12	00blackout	triplogHeavy flow 
+
+2025-10-03
+jacobemerick
+2025-10-03	jacobemerick	triplogPools to trickle 
+No water at trail crossing, but falls are flowing, pools above trail to filter, and the creek below is flowing.
+
+2025-09-28
+adenium
+2025-09-28	adenium	triplogHeavy flow 
+
+2025-09-14
+jacobemerick
+2025-09-14	jacobemerick	triplogDry 
+
+2025-09-06
+jacobemerick
+2025-09-06	jacobemerick	triplogDry 
+
+2025-06-21
+jacobemerick
+2025-06-21	jacobemerick	triplogDry 
+
+2025-06-20
+Andrewrdc
+2025-06-20	Andrewrdc	Dry 
+Unfortunately, totally dry right now
+
+2025-05-03
+DesertNymph
+2025-05-03	DesertNymph	triplogDry 
+
+2025-05-03
+00blackout
+2025-05-03	00blackout	triplogDry 
+
+2025-04-25
+jacobemerick
+2025-04-25	jacobemerick	triplogPools to trickle 
+Waterfall was trickling and there were multiple deep, clear pools just off trail to pull from.
+
+2025-04-20
+DesertNymph
+2025-04-20	DesertNymph	triplogPools to trickle 
+
+2025-04-20
+00blackout
+2025-04-20	00blackout	triplogPools to trickle 
+A couple of small pools below.
+
+2025-03-28
+sandyfortner
+2025-03-28	sandyfortner	triplogPools to trickle 
+Recorded on Route Scout - GPS Topo Mapper
+
+2025-03-01
+rhick
+2025-03-01	rhick	triplogDry 
+Dry; water in pools below in canyon
+
+2025-01-19
+Nobody01
+2025-01-19	Nobody01	Dry 
+
+2024-11-10
+bblanchard33
+2024-11-10	bblanchard33	Dry 
+No flow, no pools of water.
+
+2024-04-07
+FOTG
+2024-04-07	FOTG	triplogHeavy flow 
+
+2024-03-23
+Nobody01
+2024-03-23	Nobody01	Medium flow 
+
+2024-02-29
+The_Eagle
+2024-02-29	The_Eagle	triplogMedium flow 
+
+2024-02-29
+joebartels
+2024-02-29	joebartels	triplogMedium flow 
+Flowing well but I was able to cross easier than usual
+
+2024-02-24
+mikemcg
+2024-02-24	mikemcg	triplogMedium flow 
+
+2024-01-27
+John10s
+2024-01-27	John10s	triplogMedium flow 
+
+2024-01-24
+LJW
+2024-01-24	LJW	triplogMedium flow 
+
+2023-11-27
+ShatteredArm
+2023-11-27	ShatteredArm	Dry 
+
+2023-08-12
+BiFrost
+2023-08-12	BiFrost	triplogDry 
+Dry as a bone!
+
+2023-06-11
+adenium
+2023-06-11	adenium	Pools to trickle 
+
+2023-03-17
+FOTG
+2023-03-17	FOTG	triplogHeavy flow 
+
+2023-03-13
+joebartels
+2023-03-13	joebartels	triplogHeavy flow 
+Raging beast
+
+2023-03-13
+The_Eagle
+2023-03-13	The_Eagle	triplogHeavy flow 
+
+2023-02-01
+LJW
+2023-02-01	LJW	triplogMedium flow 
+
+2022-10-22
+AugustWest
+2022-10-22	AugustWest	triplogDry 
+No flow
+
+2022-10-01
+The_Eagle
+2022-10-01	The_Eagle	triplogPools to trickle 
+
+2022-09-25
+ShatteredArm
+2022-09-25	ShatteredArm	Dry 
+Dry as a bone.
+
+2022-08-07
+david_allen_3
+2022-08-07	david_allen_3	triplogMedium flow 
+
+2022-08-07
+Andrewrdc
+2022-08-07	Andrewrdc	Medium flow 
+Water flowing lightly over the falls... plenty of water collecting in the basin below falls. Unfortunately, not enough to run across the trail, but plenty to filter.
+
+2022-04-08
+BiFrost
+2022-04-08	BiFrost	triplogMedium flow 
+good glow over the waterfall and into the pools below
+
+2022-03-24
+MEWhiteman
+2022-03-24	MEWhiteman	Medium flow 
+
+2021-12-29
+LJW
+2021-12-29	LJW	triplogMedium flow 
+
+2021-12-07
+LJW
+2021-12-07	LJW	triplogDry 
+Pools in creek below
+
+2021-11-13
+Unregistered
+2021-11-13	Unregistered	triplogPools to trickle 
+
+2021-11-06
+The_Eagle
+2021-11-06	The_Eagle	triplogLight flow 
+We filtered from here on the return
+
+2021-11-06
+joebartels
+2021-11-06	joebartels	triplogPools to trickle 
+trickle
+
+2021-10-25
+GrangerGuy
+2021-10-25	GrangerGuy	Medium flow 
+Lots of water falling and nice pools to bail from.
+
+2021-09-04
+JuanJaimeiii
+2021-09-04	JuanJaimeiii	triplogHeavy flow 
+
+2021-04-09
+Andrewrdc
+2021-04-09	Andrewrdc	Light flow 
+Small but significant falls... could hear from trail but not enough water to reach trail. Plenty of pools to filter from.
+
+2021-04-03
+The_Eagle
+2021-04-03	The_Eagle	triplogLight flow 
+Pools and light flow. Nothing running across trail.
+
+2021-03-28
+juggleinpink
+2021-03-28	juggleinpink	Medium flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2021-03-27
+DixieFlyer
+2021-03-27	DixieFlyer	triplogMedium flow 
+
+2021-02-13
+kelraen
+2021-02-13	kelraen	triplogLight flow 
+
+2020-09-27
+John10s
+2020-09-27	John10s	Dry 
+Recorded on Route Scout - GPS Topo Mapper
+
+2020-09-04
+david_allen_3
+2020-09-04	david_allen_3	triplogPools to trickle 
+
+2020-06-06
+GrangerGuy
+2020-06-06	GrangerGuy	triplogPools to trickle 
+Just a drizzle coming down in the falls. A few pools with water. Have to climb up to the falls to find these.
+
+2020-05-08
+kyleGChiker
+2020-05-08	kyleGChiker	triplogMedium flow 
+Difficult to quantify the amount of water, but probably 50+ gallons per minute. I've never been to the waterfall during peak spring runoff, so I have nothing to compare it to. I filtered from a pool 4 feet by 3 feet by 1 foot deep near the base of the waterfall. The water went underground within 50 yards of the falls, but then reappeared and was flowing down the entire canyon towards the trailhead.
+
+2020-05-01
+rayhuston
+2020-05-01	rayhuston	triplogPools to trickle 
+The pools are ankle to knee deep and clear
+
+2020-04-26
+Andrewrdc
+2020-04-26	Andrewrdc	Medium flow 
+Flowing freely... not quite as much as last month after rains but still plenty full. Nice sized pools above and below trail.
+
+2020-04-05
+adv_trev
+2020-04-05	adv_trev	triplogMedium flow 
+
+2020-03-29
+ultrazona
+2020-03-29	ultrazona	triplogHeavy flow 
+
+2020-03-14
+FOTG
+2020-03-14	FOTG	triplogHeavy flow 
+
+2020-03-01
+mikemcg
+2020-03-01	mikemcg	triplogHeavy flow 
+
+2020-01-23
+LJW
+2020-01-23	LJW	triplogHeavy flow 
+
+2020-01-15
+LJW
+2020-01-15	LJW	triplogMedium flow 
+
+2020-01-09
+LJW
+2020-01-09	LJW	triplogHeavy flow 
+
+2019-12-21
+jhauglie
+2019-12-21	jhauglie	triplogMedium flow 
+Plenty of water!
+
+2019-11-24
+Andrewrdc
+2019-11-24	Andrewrdc	triplogHeavy flow 
+Flowing in full glory! Pools above and below trail full of water...
+
+2019-10-11
+bretinthewild
+2019-10-11	bretinthewild	triplogDry 
+No flow this time of year.
+
+2019-09-29
+Andrewrdc
+2019-09-29	Andrewrdc	Pools to trickle 
+Did not see or hear any "falls". However, plenty of water in the pool directly above the trail. Plenty of water from the recent rains.
+
+2019-09-28
+chumley
+2019-09-28	chumley	triplogPools to trickle 
+Just a trickle over the falls. Nice clear pools in the bedrock below.
+
+2019-09-15
+MAP
+2019-09-15	MAP	triplogPools to trickle 
+Small pools leftover assuming from the rain the previous day
+
+2019-05-11
+jcvarner14
+2019-05-11	jcvarner14	Medium flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2019-03-16
+The_Eagle
+2019-03-16	The_Eagle	triplogHeavy flow 
+
+2019-03-07
+Daytripper
+2019-03-07	Daytripper	triplogHeavy flow 
+
+2019-03-06
+pyro4lif
+2019-03-06	pyro4lif	Medium flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2019-02-10
+Anekantavada
+2019-02-10	Anekantavada	triplogMedium flow 
+Pretty nicE!
+
+2019-01-19
+MountainMatt
+2019-01-19	MountainMatt	triplogHeavy flow 
+Gusher.
+
+2018-11-10
+Yoder
+2018-11-10	Yoder	triplogPools to trickle 
+
+2018-11-01
+tdwood
+2018-11-01	tdwood	triplogMedium flow 
+Water in pools. No visual, but could hear waterfall.
+
+2018-10-28
+chumley
+2018-10-28	chumley	triplogLight flow 
+
+2018-06-03
+jacobemerick
+2018-06-03	jacobemerick	triplogDry 
+
+2018-04-04
+tdwood
+2018-04-04	tdwood	triplogPools to trickle 
+Three to six inches of clear, standing water in pool just above trail. Dry above that point.
+
+2018-02-18
+joebartels
+2018-02-18	joebartels	triplogPools to trickle 
+Barely a trickle
+
+2018-01-21
+FOTG
+2018-01-21	FOTG	triplogDry 
+Just dripping.
+
+2017-11-18
+jacobemerick
+2017-11-18	jacobemerick	triplogDry 
+
+2017-09-10
+danielswwdb
+2017-09-10	danielswwdb	Pools to trickle 
+Recorded on Route Scout - GPS Topo Mapper
+
+2017-09-01
+jacobemerick
+2017-09-01	jacobemerick	triplogPools to trickle 
+
+2017-05-20
+ddgrunning
+2017-05-20	ddgrunning	triplogLight flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2017-05-13
+The_Eagle
+2017-05-13	The_Eagle	triplogPools to trickle 
+There still some to filter here
+
+2017-05-13
+joebartels
+2017-05-13	joebartels	triplogPools to trickle 
+just a trickle, still falling from above
+good pools to filter
+
+2017-05-06
+jacobemerick
+2017-05-06	jacobemerick	triplogPools to trickle 
+
+2017-04-08
+Mike_Fels
+2017-04-08	Mike_Fels	triplogLight flow 
+
+2017-04-02
+adv_trev
+2017-04-02	adv_trev	triplogMedium flow 
+
+2017-03-26
+survivordude
+2017-03-26	survivordude	triplogLight flow 
+
+2017-03-25
+rayhuston
+2017-03-25	rayhuston	triplogMedium flow 
+Still rocking, and very popular today.
+
+2017-03-17
+BiFrost
+2017-03-17	BiFrost	triplogHeavy flow 
+lots of water coming off the falls
+
+2017-03-04
+Scottish93
+2017-03-04	Scottish93	Heavy flow 
+Recorded on Route Scout - GPS Topo Mapper
+
+2017-02-13
+arizona_water
+2017-02-13	arizona_water	triplogMedium flow 
+It was flowing strong in the Eagle's photos from 2/11/17
+
+2017-02-11
+joebartels
+2017-02-11	joebartels	triplogHeavy flow 
+spectacular, free admission to the show
+
+2017-02-11
+The_Eagle
+2017-02-11	The_Eagle	triplogHeavy flow 
+Yowzers!
+
+2016-12-26
+FOTG
+2016-12-26	FOTG	triplogHeavy flow 
+
+2016-12-11
+FOTG
+2016-12-11	FOTG	triplogPools to trickle 
+
+2016-10-09
+DevilChild
+2016-10-09	DevilChild	triplogLight flow 
+A few large pools and steady trickle.
+
+2016-09-26
+DevilChild
+2016-09-26	DevilChild	triplogDry 
+
+2016-09-24
+BiFrost
+2016-09-24	BiFrost	triplogPools to trickle 
+light drip off the falls
+
+2016-09-23
+jacobemerick
+2016-09-23	jacobemerick	triplogPools to trickle 
+Few clear pools, likely from the rain a few days ago. No trickles.
+
+2016-09-17
+DallinW
+2016-09-17	DallinW	triplogPools to trickle 
+Nasty pools and a small trickle. Don't count on it until we get some more precipitation.
+
+2016-09-16
+Andrewrdc
+2016-09-16	Andrewrdc	triplogPools to trickle 
+Found a few pools and the walls in the inner canyon looked wet
+
+2016-08-27
+The_N
+2016-08-27	The_N	triplogPools to trickle 
+Dry on Friday. Light flow on Saturday.
+
+2016-08-06
+The_N
+2016-08-06	The_N	triplogMedium flow 
+
+2016-08-03
+The_N
+2016-08-03	The_N	triplogPools to trickle 
+
+2016-05-14
+DallinW
+2016-05-14	DallinW	triplogPools to trickle 
+
+2016-05-01
+writelots
+2016-05-01	writelots	triplogPools to trickle 
+
+2016-04-30
+DallinW
+2016-04-30	DallinW	triplogLight flow 
+
+2016-04-17
+flagscott
+2016-04-17	flagscott	triplogMedium flow 
+Over a quart a minute near the trail.
+
+2016-04-06
+AsTheCrowFlies
+2016-04-06	AsTheCrowFlies	triplogPools to trickle 
+
+2016-04-03
+jacobemerick
+2016-04-03	jacobemerick	triplogPools to trickle 
+
+2016-04-03
+AsTheCrowFlies
+2016-04-03	AsTheCrowFlies	triplogLight flow 
+Some trickling falls if you climb up and a huge pool at the trail crossing.
+
+2016-03-18
+hikingaz2
+2016-03-18	hikingaz2	triplogLight flow 
+Good water flow, don't know for how long, although there is still snow melting above.
+
+2016-03-18
+rtaylor3235
+2016-03-18	rtaylor3235	triplogLight flow 
+
+2016-02-16
+DallinW
+2016-02-16	DallinW	triplogHeavy flow 
+
+2016-01-31
+FOTG
+2016-01-31	FOTG	triplogHeavy flow 
+
+2015-12-19
+FOTG
+2015-12-19	FOTG	triplogLight flow 
+Light flow, but plenty of water in the area and the pools at base are full.
+
+2015-11-01
+DallinW
+2015-11-01	DallinW	triplogPools to trickle 
+A trickle up at the slot. Small pools towards the trail.
+
+2015-10-25
+FOTG
+2015-10-25	FOTG	triplogPools to trickle 
+Only a very light trickle a pool of water in bedrock
+
+2015-06-13
+johnpmc59
+2015-06-13	johnpmc59	Light flow 
+A bit more than a trickle up above the first couple of pools near the trail. Could easily fill a few liters direct from the falls in a couple of minutes.
+
+2015-05-31
+FOTG
+2015-05-31	FOTG	triplogPools to trickle 
+
+2015-05-16
+Hiker_Wannabe
+2015-05-16	Hiker_Wannabe	Heavy flow 
+
+2015-04-20
+egreen
+2015-04-20	egreen	triplogLight flow 
+
+2015-04-12
+TomJacoby
+2015-04-12	TomJacoby	Medium flow 
+Plenty of good water over the falls. Estimate 5 GPM.
+
+2015-03-14
+The_Eagle
+2015-03-14	The_Eagle	triplogMedium flow 
+Plenty to filter
+
+2015-03-14
+BiFrost
+2015-03-14	BiFrost	triplogLight flow 
+light flow for spring time mostly because of low snow this year
+
+2015-02-28
+FOTG
+2015-02-28	FOTG	triplogHeavy flow 
+
+2015-01-03
+Anekantavada
+2015-01-03	Anekantavada	triplogLight flow 
+The Falls look really cool frozen. Makes many interesting ice shapes, stalactites and stalagmites of ice.
+
+2014-11-27
+Tough_Boots
+2014-11-27	Tough_Boots	triplogPools to trickle 
+Dry at the trail crossings but pools up near the slot.
+
+2014-03-08
+DBmooner
+2014-03-08	DBmooner	triplogLight flow 
+
+2013-10-05
+chumley
+2013-10-05	chumley	triplogPools to trickle 
+Just barely a trickle over the falls. A couple of small stagnant pools below.
+
+2013-05-13
+trekkin_gecko
+2013-05-13	trekkin_gecko	triplogPools to trickle 
+
+2013-04-20
+tibber
+2013-04-20	tibber	triplogMedium flow 
+a nice big pool just off the trail and two larger pools above the trail and some smaller pools below the trail.
+
+2013-04-07
+mazatzal
+2013-04-07	mazatzal	triplogMedium flow 
+
+2013-03-24
+BiFrost
+2013-03-24	BiFrost	triplogMedium flow 
+
+2013-03-16
+The_Eagle
+2013-03-16	The_Eagle	triplogMedium flow 
+Nice Flow
+
+2013-03-16
+joebartels
+2013-03-16	joebartels	triplogHeavy flow 
+1 day away from the 15th anniversary of the naming of mid March super pumper.
+
+Kicking hard, yet a pip squeak compared to Deadman's...
+45 day water report map

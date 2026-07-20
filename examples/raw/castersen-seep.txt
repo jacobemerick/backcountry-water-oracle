@@ -1,0 +1,76 @@
+
+Castersen Seep	
+Jan	Feb	Mar	Apr	May	Jun	Jul	Aug	Sep	Oct	Nov	Dec	All
+2	2	5			2	2	1	1	▲
+34.09059, -111.46653 Gila, AZ
+
+2026-06-30
+DesertNymph
+2026-06-30	DesertNymph	triplogDry 
+
+2026-06-30
+jacobemerick
+2026-06-30	jacobemerick	triplogDry 
+
+2026-06-30
+00blackout
+2026-06-30	00blackout	triplogDry 
+
+2026-05-15
+jacobemerick
+2026-05-15	jacobemerick	triplogQuart per minute 
+Several deep pools filled with good water, trickle going over the falls.
+
+2025-12-06
+jacobemerick
+2025-12-06	jacobemerick	triplogGallon per minute 
+Lots of water, including along the feeder creeks.
+
+2025-11-28
+jacobemerick
+2025-11-28	jacobemerick	triplogGallon + per minute 
+Heavy flow down both creeks feeding into the area, water everywhere.
+
+2025-10-25
+diablo
+2025-10-25	diablo	triplogQuart per minute 
+
+2025-10-16
+jacobemerick
+2025-10-16	jacobemerick	triplogGallon + per minute 
+Tons of water flowing down both creeks, plus there was a surprise seep seeping, tasted wonderful.
+
+2025-05-24
+jacobemerick
+2025-05-24	jacobemerick	triplogDripping 
+Less water flowing from pool to pool than in Apr, still enough clear water to scoop around the algae.
+
+2025-04-25
+jacobemerick
+2025-04-25	jacobemerick	triplogQuart per minute 
+Several algea-filled pools directly below the seep, trickling into larger, clear rock tanks that tasted... okay.
+
+2020-06-06
+GrangerGuy
+2020-06-06	GrangerGuy	triplogDry 
+Completely dry
+
+2018-06-03
+jacobemerick
+2018-06-03	jacobemerick	triplogDripping 
+Few tanks below still had water, though they were opaque.
+
+2017-09-01
+jacobemerick
+2017-09-01	jacobemerick	triplogDripping 
+Well, the seep proper was dry, but there were tanks downstream that held water.
+
+2015-04-12
+TomJacoby
+2015-04-12	TomJacoby	Gallon + per minute 
+Falls were running well - approx 5 GPM.
+
+2008-09-01
+nonot
+2008-09-01	nonot	triplogDry 
+45 day water report map

@@ -1,0 +1,293 @@
+
+Chilson Spring	
+Jan	Feb	Mar	Apr	May	Jun	Jul	Aug	Sep	Oct	Nov	Dec	All
+4	7	11	12		2		1	4	8	7	1	▲
+34.08587, -111.49097 Yavapai, AZ
+
+2026-04-10
+John10s
+2026-04-10	John10s	triplogDripping 
+Recorded on Route Scout - GPS Topo Mapper Spring box full of stagnant water
+
+2026-04-10
+joebartels
+2026-04-10	joebartels	triplogDripping 
+Recorded on Route Scout - GPS Topo Mapper Barely dripping but full
+
+2025-10-24
+BiFrost
+2025-10-24	BiFrost	triplogGallon + per minute 
+spring box completely full
+
+2025-10-15
+John10s
+2025-10-15	John10s	triplogDripping 
+Recorded on Route Scout - GPS Topo Mapper Full spring box, stagnant water
+
+2025-08-30
+Andrewrdc
+2025-08-30	Andrewrdc	triplogDripping 
+Recorded on Route Scout - GPS Topo Mapper Cistern is full or fairly clear water. I did not see any water flow through pipe so not sure how much was just from recent rains.
+
+2024-11-09
+bblanchard33
+2024-11-09	bblanchard33	Dry 
+No water flow observed but the box was full of water. Looked clear with some algae and tadpoles in the box.
+
+2024-03-23
+Nobody01
+2024-03-23	Nobody01	Gallon per minute 
+Catchment is full and it's flowing down over the trail. The trough' in Chilson Camp are both 1/3 of the way full. One side of the trough has dead critters, the other side does not (and it tastes okay).
+
+2024-02-29
+The_Eagle
+2024-02-29	The_Eagle	triplogQuart per minute 
+We didn't climb to check, but based on the water on the trail, the catchment should be full
+
+2024-02-29
+joebartels
+2024-02-29	joebartels	triplogGallon + per minute 
+Flowing well based on all the water seeping down the side of the mountain
+
+2024-01-27
+John10s
+2024-01-27	John10s	triplogDripping 
+Spring box was full, but water was stagnant and full of algae
+
+2023-11-27
+ShatteredArm
+2023-11-27	ShatteredArm	Dripping 
+Full spring box
+
+2023-03-13
+joebartels
+2023-03-13	joebartels	triplogGallon + per minute 
+The side of the mountain was seeping vigorously
+
+2023-03-13
+The_Eagle
+2023-03-13	The_Eagle	triplogGallon per minute 
+
+2022-10-22
+AugustWest
+2022-10-22	AugustWest	triplogDripping 
+Full spring box
+
+2022-09-23
+ShatteredArm
+2022-09-23	ShatteredArm	Dripping 
+Spring box still full, no visible flow on the ground.
+
+2022-04-23
+ShatteredArm
+2022-04-23	ShatteredArm	triplogDripping 
+
+2022-04-08
+BiFrost
+2022-04-08	BiFrost	triplogQuart per minute 
+spring tub was almost full but also lots of algae so the water quality was not the best
+
+2021-12-05
+mrk_jhsn
+2021-12-05	mrk_jhsn	Dripping 
+Recorded on Route Scout - GPS Topo Mapper
+
+2021-11-14
+kyleGChiker
+2021-11-14	kyleGChiker	triplogQuart per minute 
+Plenty of water here...the spring box was full. Quality okay, but not great.
+
+2021-11-14
+Unregistered
+2021-11-14	Unregistered	triplogDripping 
+Box is full and good once filtered but flow is very slow.
+
+2021-10-15
+xsproutx
+2021-10-15	xsproutx	Gallon per minute 
+Full box. Kind of a pain to get to but roughly .25 south (on the AZT) or East (on Barnhardt) there is flowing water that crosses the trail with multiple foot+ deep pools that's much easier to collect... since, you know, you have to step over it
+
+2021-04-09
+Andrewrdc
+2021-04-09	Andrewrdc	Quart per minute 
+Plenty of clear water in cistern... additional water trickling down hill... reliable source.
+
+2021-04-03
+The_Eagle
+2021-04-03	The_Eagle	triplogQuart per minute 
+Trough is full. Light algae. Easily filterable.
+
+2020-09-27
+John10s
+2020-09-27	John10s	Quart per minute 
+Recorded on Route Scout - GPS Topo Mapper Metal tank is full
+
+2020-06-06
+GrangerGuy
+2020-06-06	GrangerGuy	triplogDripping 
+Spring box is full of good tasting water. Both frogs and algae in the tank, but water is clear.
+
+2020-04-26
+Andrewrdc
+2020-04-26	Andrewrdc	Gallon per minute 
+Cistern full and overflowing. Much more algae in the basin but also seemed to be clogged up (causing overflow).
+
+2020-01-09
+LJW
+2020-01-09	LJW	triplogDripping 
+Spring Box was just about full
+
+2019-11-24
+Andrewrdc
+2019-11-24	Andrewrdc	triplogGallon + per minute 
+Cistern completely full after contribution from recent rains...
+
+2019-11-12
+prywreck
+2019-11-12	prywreck	Gallon per minute 
+Spring Box full of clear water with friendly polliwog. Chilson campsite great place to camp with rickety picnic table
+
+2019-10-11
+bretinthewild
+2019-10-11	bretinthewild	triplogQuart per minute 
+Plenty of water in new spring box
+
+2019-09-29
+Andrewrdc
+2019-09-29	Andrewrdc	Quart per minute 
+Cistern FULL of water with spring dripping. Water clean and clear. All the piping still looks brand new and in great shape... new sign too!
+
+2019-03-16
+The_Eagle
+2019-03-16	The_Eagle	triplogQuart per minute 
+New spring box is full
+
+2019-03-16
+joebartels
+2019-03-16	joebartels	Gallon + per minute 
+Recorded on Route Scout - GPS Topo Mapper IPhone trough is full
+
+2019-03-04
+pyro4lif
+2019-03-04	pyro4lif	Gallon per minute 
+Recorded on Route Scout - GPS Topo Mapper
+
+2019-01-09
+sandyfortner
+2019-01-09	sandyfortner	Gallon per minute 
+Spring box was full. A little algae, but great water!
+
+2018-11-01
+tdwood
+2018-11-01	tdwood	triplogGallon + per minute 
+This source has been rehabilitated and is now a reliable, consistently producing source of water. Some algae present.
+
+2018-06-03
+jacobemerick
+2018-06-03	jacobemerick	triplogDripping 
+Recently cleaned out, would be easy to pull water from now. Water was dripping out of the holder. Looks like the lid was intentionally removed.
+
+2017-11-10
+ultrazona
+2017-11-10	ultrazona	triplogDripping 
+Plenty of gallons located in box. Needed to filter through mesh screen and Buff to eliminate dirt and debris. Water was still lake flavored and brown.
+
+2017-03-17
+BiFrost
+2017-03-17	BiFrost	triplogGallon per minute 
+water running across the trail from the spring area
+
+2017-02-20
+FOTG
+2017-02-20	FOTG	triplogGallon + per minute 
+You could float into the spring right now and paddle across the lake that has formed at Chilson Camp.
+
+2017-02-11
+The_N
+2017-02-11	The_N	triplogQuart per minute 
+
+2017-02-11
+DallinW
+2017-02-11	DallinW	triplogGallon per minute 
+
+2017-02-11
+joebartels
+2017-02-11	joebartels	triplogQuart per minute 
+too squishy to check the spring, the entire side of the mountain was oozing water
+
+2017-02-11
+The_Eagle
+2017-02-11	The_Eagle	triplogQuart per minute 
+Did not go off trail to check, but the trail below was wet
+
+2016-09-23
+jacobemerick
+2016-09-23	jacobemerick	triplogDripping 
+Though it'd take a bit of patience to pull more than a few mouthfuls from it.
+
+2016-04-09
+DallinW
+2016-04-09	DallinW	triplogQuart per minute 
+Pools and light flow in drainage just south of spring.
+
+2016-04-06
+AsTheCrowFlies
+2016-04-06	AsTheCrowFlies	triplogDripping 
+Couldn't find the location on the map. Spring was actually closer to camp.
+
+2016-04-02
+jacobemerick
+2016-04-02	jacobemerick	triplogDripping 
+Barely dripping. Catch was mostly full of silt and mud.
+
+2016-01-30
+The_Eagle
+2016-01-30	The_Eagle	triplogQuart per minute 
+Didn't go up to the spring, but it was running downhill across the trail
+
+2015-04-10
+TomJacoby
+2015-04-10	TomJacoby	Dry 
+Climbed up hill to spring box (culvert). Water seeping at less than 1 GPM, but spring box was full of filterable water.
+
+2015-04-08
+writelots
+2015-04-08	writelots	triplogQuart per minute 
+
+2015-03-14
+The_Eagle
+2015-03-14	The_Eagle	triplogDripping 
+Water was across the Trail, but did not climb up to check the source.
+
+2013-03-16
+The_Eagle
+2013-03-16	The_Eagle	triplogQuart per minute 
+Did not go up the hill to view the spring, but the overflow was crossing the Trail
+
+2011-03-26
+nonot
+2011-03-26	nonot	triplogDripping 
+The hillside was moist with a swampy area, but it didn't seem filterable.
+
+2011-03-21
+Xiled1
+2011-03-21	Xiled1	triplogQuart per minute 
+
+2010-10-29
+The_Eagle
+2010-10-29	The_Eagle	triplogDripping 
+Small 2' round metal container was full of filterable water.
+
+Located at N34 05.142 W111 29.449
+
+2010-10-29
+azdesertfather
+2010-10-29	azdesertfather	triplogDripping 
+
+2010-10-29
+joebartels
+2010-10-29	joebartels	triplogDripping 
+This spring has a small catch with a lid. Water oozes down the mountain for about ten feet. The top of the water had a slight oil looking slick to it but it seemed alright. We found it half full, pumped ten quarts of water and it looked about the same level. Tasted perfect!
+
+This typically dry time of year had a decent rain a week ago and heavy rain 3-4 weeks ago.
+45 day water report map
