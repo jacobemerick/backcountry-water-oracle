@@ -15,8 +15,9 @@ import json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from test_forecast import ASOF, EXAMPLE_CSV, FIXTURES, fixture_provider, run_cli  # noqa: E402
-import forecast                                                                   # noqa: E402
+import backcountry_water_oracle as forecast                                       # noqa: E402
 
 forecast.PRECIP_PROVIDER = fixture_provider
 code, out, err = run_cli([EXAMPLE_CSV, "--asof", ASOF.isoformat(), "--json"])

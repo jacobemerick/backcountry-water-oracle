@@ -25,8 +25,10 @@ from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
-import forecast                                                    # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "src"))
+# Imported under a short alias: the engine is one module, and every assertion
+# below reads better as forecast.X than backcountry_water_oracle.X.
+import backcountry_water_oracle as forecast                       # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
 PRECIP_DIR = os.path.join(FIXTURES, "precip")
@@ -1069,7 +1071,8 @@ class TestRun(OfflineTestCase):
     def test_options_are_honoured(self):
         payload = forecast.run(self.sources(), ASOF, pool=False, harmonics=2,
                                pool_radius_km=15.0, use_cache=False)
-        self.assertEqual(payload["params"], {"pool": False, "pool_radius_km": 15.0,
+        self.assertEqual(payload["params"], {"engine_version": forecast.__version__,
+                                             "pool": False, "pool_radius_km": 15.0,
                                              "harmonics": 2, "cache": False,
                                              "windows": forecast.WINDOWS})
         for s in payload["sources"]:
@@ -1228,6 +1231,52 @@ class TestGolden(OfflineTestCase):
 # =========================================================================== #
 # It still runs as a script
 # =========================================================================== #
+class TestVersioning(OfflineTestCase):
+    """The engine has an identity, and every payload carries it (#26)."""
+    def test_version_is_a_sane_string(self):
+        parts = forecast.__version__.split(".")
+        self.assertEqual(len(parts), 3, forecast.__version__)
+        self.assertTrue(all(p.isdigit() for p in parts), forecast.__version__)
+
+    def test_version_flag(self):
+        code, out, err = run_cli(["--version"])
+        self.assertEqual(code, 0)
+        self.assertIn(forecast.__version__, out)
+        self.assertEqual(err, "")
+
+    def test_version_flag_short_circuits_before_reading_input(self):
+        """--version must work with no CSV, and must not try to analyse one."""
+        code, out, _ = run_cli(["--version", "/does/not/exist.csv"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("[error]", out)
+
+    def test_every_payload_is_stamped(self):
+        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        self.assertEqual(payload["params"]["engine_version"], forecast.__version__)
+
+    def test_the_cli_payload_is_stamped_too(self):
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(json.loads(out)["params"]["engine_version"], forecast.__version__)
+
+    def test_pyproject_reads_the_version_from_the_module(self):
+        """One source of truth: if pyproject ever hardcodes a number instead of
+        reading __version__, the two can drift and a release lies about itself."""
+        with open(os.path.join(ROOT, "pyproject.toml")) as f:
+            pyproject = f.read()
+        self.assertIn('dynamic = ["version"]', pyproject)
+        self.assertIn('attr = "backcountry_water_oracle.__version__"', pyproject)
+        self.assertNotRegex(pyproject, r'(?m)^version\s*=\s*"')
+
+    def test_console_script_target_takes_no_arguments(self):
+        """console_scripts calls its target with no args; main(argv) would
+        TypeError. This is the bug that would greet the first person to install."""
+        import inspect
+        self.assertEqual(len(inspect.signature(forecast.cli).parameters), 0)
+        entry = 'water-forecast = "backcountry_water_oracle:cli"'
+        with open(os.path.join(ROOT, "pyproject.toml")) as f:
+            self.assertIn(entry, f.read())
+
+
 class TestRunsAsAScript(unittest.TestCase):
     def test_script_entry_point(self):
         """One subprocess, on a path that fails before any network call."""

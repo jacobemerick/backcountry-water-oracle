@@ -27,7 +27,8 @@ It's built in two layers so it works for anyone, with any report format:
 The skill parses whatever you give it, scores each observation, and runs the
 engine. Include several nearby sources at once for a better read (see below).
 
-**B. Directly (any language / no Claude):** produce the CSV yourself and run:
+**B. Directly (any language / no Claude):** produce the CSV yourself and run it.
+From a checkout, no install needed:
 ```bash
 python3 forecast.py examples/mazatzal-wilderness.csv          # one file, many sources
 python3 forecast.py a.csv b.csv                               # combine files
@@ -38,7 +39,17 @@ python3 forecast.py area.csv --no-pool                        # analyze each sou
 cat area.csv | python3 forecast.py -                          # read the CSV from stdin
 python3 forecast.py area.csv --json                           # machine-readable output
 ```
-Pure Python standard library — no `pip install`. Precip comes from the free
+Or install it and get a `water-forecast` command anywhere:
+
+```bash
+pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.1.0
+water-forecast area.csv --json
+water-forecast --version
+```
+
+Zero runtime dependencies, installed or not — the packaging exists so embedders
+can pin a version instead of vendoring a copy, not to open a door to libraries.
+Precip comes from the free
 [Open-Meteo ERA5 archive](https://open-meteo.com/) (no key). It's cached in
 `.cache/` beside the engine when you're working in a checkout, and otherwise in
 your platform's user cache directory (`~/Library/Caches/backcountry-water-oracle`,
@@ -52,13 +63,18 @@ them a host should never need to reach for anything private — or reimplement
 anything.
 
 ```python
-import io, forecast
+import io
+import backcountry_water_oracle as bwo
 from datetime import date
 
-forecast.PRECIP_PROVIDER = my_provider                       # optional, see below
-sources = forecast.load_sources_from([io.StringIO(request_body)])
-payload = forecast.run(sources, date(2026, 8, 15))           # what --json prints
+bwo.PRECIP_PROVIDER = my_provider                        # optional, see below
+sources = bwo.load_sources_from([io.StringIO(request_body)])
+payload = bwo.run(sources, date(2026, 8, 15))            # what --json prints
 ```
+
+Pin it. `pip install git+https://github.com/…@v0.1.0` — an exact pin makes every
+upgrade deliberate, which is the point after the alternative (a vendored copy)
+drifted twice.
 
 ### Running the engine
 
@@ -146,7 +162,7 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-124 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+131 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
@@ -159,6 +175,42 @@ that golden file.
 Linux plus macOS on 3.14 (the platform and version this is developed on). There
 is no install step and there shouldn't ever be one — the engine and the suite are
 both stdlib-only by rule.
+
+## What's public
+
+The version number only means something if the surface it covers is written
+down. **These are supported** — a breaking change to any of them is a version
+bump and a changelog entry:
+
+| | |
+|---|---|
+| `run(sources, asof, …)` | the three passes; returns the `--json` payload |
+| `load_sources(paths)` / `load_sources_from(streams, labels)` | the two loaders |
+| `analyze(src, asof, …)` | single source, no pooling |
+| `PRECIP_PROVIDER`, `open_meteo_provider(…)`, `CACHE_DIR` | the precip seam |
+| the **`--json` payload** | every key and its meaning |
+| the **CLI** | flags, `-`/stdin, exit codes (`0` ok, `1` no input, `2` bad input) |
+| `__version__` | also `--version`, also `params.engine_version` in the payload |
+
+**Everything else is internal** — anything underscore-prefixed, plus
+`analyze_base()`, `finalize()`, `pool_controlled()`, `run_json()`,
+`parse_args()`, and the layout of the text report. They're importable, because
+Python, but they move without notice. If you need one of them, that's worth an
+issue: it usually means a supported seam is missing, which is exactly how
+`load_sources_from()` and `run()` came to exist.
+
+### What the version does *not* cover
+
+**The numbers can move without any of the above changing.** A better pooling
+prior or a season-control fix can leave every signature and every key identical
+and still turn *Marginal* into *Likely DRY* for the same CSV on the same date —
+that has already happened twice here (season control, then pooling).
+
+Those changes go in the changelog, and every payload carries
+`params.engine_version` so a stored forecast can be traced to the code that made
+it. If you need two forecasts to be comparable, check that field: same version
+means the method didn't move underneath you, and different versions mean it may
+have.
 
 ## The input contract (CSV schema)
 
@@ -310,6 +362,8 @@ Shipped:
       or shared cache — see [Embedding the engine](#embedding-the-engine-hosts).
 - [x] **Test suite + CI** ([#15]) — stdlib, offline, deterministic; run on every
       push and PR across Python 3.9–3.14. See [Tests](#tests).
+- [x] **Installable package** ([#26]) — `pip install`, a `water-forecast` command,
+      and a declared public surface so embedders pin instead of vendoring.
 
 Planned — the issue is where the detail and the open questions live:
 
@@ -329,6 +383,7 @@ Planned — the issue is where the detail and the open questions live:
 [#19]: https://github.com/jacobemerick/backcountry-water-oracle/issues/19
 [#20]: https://github.com/jacobemerick/backcountry-water-oracle/issues/20
 [#21]: https://github.com/jacobemerick/backcountry-water-oracle/issues/21
+[#26]: https://github.com/jacobemerick/backcountry-water-oracle/issues/26
 
 ## Example data
 
