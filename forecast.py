@@ -79,6 +79,14 @@ WINDOWS = [30, 60, 90, 180, 270, 365]
 ERA5_LAG_DAYS = 6
 PRECIP_START = "2007-01-01"
 POOL_RADIUS_KM = 25.0   # default neighborhood radius for pooling (see pool_controlled)
+# How far two rows sharing a source name may sit apart before that is treated as a
+# name collision rather than GPS scatter (see _read_csv). Sub-kilometre differences
+# cannot change any number the engine produces -- ERA5's grid is ~9-11 km and the
+# precip cache rounds coordinates to 2dp (~1.1 km), so both rows resolve to the same
+# cell and the same cached series. Past that, it is likely two different sources
+# wearing the same name, and the engine would silently correlate one against the
+# other's weather.
+COORD_TOLERANCE_KM = 1.0
 
 # --------------------------------------------------------------------------- #
 # Input: normalized CSV -> sources
@@ -96,10 +104,24 @@ def _read_csv(f, label, sources):
         name = row["source"].strip()
         if not name:
             continue
-        s = sources.setdefault(name, {"name": name,
-                                      "lat": float(row["lat"]),
-                                      "lon": float(row["lon"]),
-                                      "reports": []})
+        lat, lon = float(row["lat"]), float(row["lon"])
+        s = sources.get(name)
+        if s is None:
+            s = sources[name] = {"name": name, "lat": lat, "lon": lon, "reports": []}
+        else:
+            # Rows sharing a name are one source, so the first row's coordinates used
+            # to win silently -- two different springs with the same name would get
+            # correlated against ONE of their weather records and look entirely
+            # normal. Close enough is still fine (GPS scatter); far apart is a bug in
+            # the data that only the author can resolve.
+            off_by = _haversine_km(s["lat"], s["lon"], lat, lon)
+            if off_by > COORD_TOLERANCE_KM:
+                raise ValueError(
+                    f"{label} line {reader.line_num}: source {name!r} has conflicting "
+                    f"coordinates -- ({s['lat']:.5f}, {s['lon']:.5f}) and "
+                    f"({lat:.5f}, {lon:.5f}), {off_by:,.1f} km apart. Rows sharing a "
+                    "name are treated as one source: rename one of them, or fix the "
+                    "coordinates.")
         sc = max(0.0, min(1.0, float(row["score"])))
         s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
 
@@ -450,7 +472,11 @@ def analyze_base(src, asof, use_cache=True, n_harm=1):
     """Per-source pass: precip -> raw + season-controlled per-window r vectors, plus
     the machinery finalize() needs. Stops BEFORE choosing a best window, so pooling
     can adjust the controlled r first. `pooled_ctrl` starts equal to the source's own
-    `ctrl` (i.e. no neighbors); pool_controlled() overwrites it when pooling runs."""
+    `ctrl` (i.e. no neighbors); pool_controlled() overwrites it when pooling runs.
+
+    Returns a dict with n == 0 (and the report accounting, but none of the analysis)
+    when nothing the source reported falls inside the precip record, so the caller
+    can say WHY it is skipping rather than just that it did."""
     data = fetch_precip(src["lat"], src["lon"],
                         min(asof, date.today() - timedelta(days=ERA5_LAG_DAYS)), use_cache)
     idx = build_precip_index(data)
@@ -458,8 +484,16 @@ def analyze_base(src, asof, use_cache=True, n_harm=1):
     dates = [d for d, _ in recs]
     y = [s for _, s in recs]
     n = len(y)
+    # A report outside the precip record can't be correlated against anything, so it
+    # is dropped -- but n / %dry / mean / by_month are then computed on the survivors
+    # only, which silently misrepresents the record. Count what went, and why.
+    n_total = len(src["reports"])
+    n_early = sum(1 for d, _ in src["reports"] if d <= idx["first"])
+    n_late = sum(1 for d, _ in src["reports"] if d > idx["last"])
+    counts = {"n_total": n_total, "n_early": n_early, "n_late": n_late,
+              "precip_first": idx["first"], "precip_last": idx["last"]}
     if n == 0:
-        return None
+        return dict(counts, name=src["name"], lat=src["lat"], lon=src["lon"], n=0)
     pct_dry = round(100 * sum(1 for v in y if v == 0) / n)
     feats = {f"{w}d": [window_sum(idx, d, w) for d, _ in recs] for w in WINDOWS}
     raw = {name: spearman(xs, y) for name, xs in feats.items()}
@@ -470,13 +504,14 @@ def analyze_base(src, asof, use_cache=True, n_harm=1):
     bym = {}
     for d, s in recs:
         bym.setdefault(d.month, []).append(s)
-    return {"name": src["name"], "lat": src["lat"], "lon": src["lon"],
-            "n": n, "pct_dry": pct_dry, "mean": sum(y) / n,
-            "annual_precip": idx["annual"], "raw": raw, "ctrl": ctrl,
-            "pooled_ctrl": dict(ctrl), "borrowed": {k: 0.0 for k in ctrl},
-            "group_n": 1, "n_harm": n_harm,
-            "idx": idx, "recs": recs, "asof_req": asof,
-            "by_month": {m: sum(v) / len(v) for m, v in sorted(bym.items())}}
+    return dict(counts,
+                name=src["name"], lat=src["lat"], lon=src["lon"],
+                n=n, pct_dry=pct_dry, mean=sum(y) / n,
+                annual_precip=idx["annual"], raw=raw, ctrl=ctrl,
+                pooled_ctrl=dict(ctrl), borrowed={k: 0.0 for k in ctrl},
+                group_n=1, n_harm=n_harm,
+                idx=idx, recs=recs, asof_req=asof,
+                by_month={m: sum(v) / len(v) for m, v in sorted(bym.items())})
 
 def finalize(b):
     """Turn a (possibly pooled) base into the presentation dict: pick the best window
@@ -494,6 +529,8 @@ def finalize(b):
     pred = sum(s for _, s in hist) / len(hist)
     return {"name": b["name"], "lat": b["lat"], "lon": b["lon"],
             "n": b["n"], "pct_dry": b["pct_dry"], "mean": b["mean"],
+            "n_total": b["n_total"], "n_early": b["n_early"], "n_late": b["n_late"],
+            "precip_first": b["precip_first"], "precip_last": b["precip_last"],
             "annual_precip": b["annual_precip"],
             "cors": sorted(((r, name) for name, r in b["raw"].items()), key=lambda t: -abs(t[0])),
             "ctrl_cors": sorted(b["ctrl"].items(), key=lambda t: -abs(t[1])),   # OWN, for the table
@@ -505,14 +542,36 @@ def finalize(b):
             "by_month": b["by_month"]}
 
 def analyze(src, asof, use_cache=True, n_harm=1):
-    """Single-source convenience (no pooling): base pass then finalize."""
+    """Single-source convenience (no pooling): base pass then finalize.
+    None when the source has nothing inside the precip record (see excluded_note)."""
     b = analyze_base(src, asof, use_cache, n_harm)
-    return None if b is None else finalize(b)
+    return None if b is None or b["n"] == 0 else finalize(b)
+
+def excluded_note(a):
+    """One line about reports that fell outside the precip record, or None. Applies
+    to a base or a finalized dict, including the n == 0 case."""
+    early, late, total = a["n_early"], a["n_late"], a["n_total"]
+    if not (early or late):
+        return None
+    bits = []
+    if early:
+        bits.append(f"{early} predate{'' if early > 1 else 's'} "
+                    f"the precip record ({a['precip_first']})")
+    if late:
+        bits.append(f"{late} postdate{'' if late > 1 else 's'} "
+                    f"{'it' if early else 'the precip record'} ({a['precip_last']})")
+    kept = total - early - late
+    return (f"{kept} of {total} reports usable -- " + " and ".join(bits)
+            + (" -- so n, %dry and mean below describe the usable ones"
+               if kept else ""))
 
 def print_source(a):
     print(f"\n{'='*74}\n{a['name']}   ({a['lat']:.5f}, {a['lon']:.5f})")
     print(f"  reports: {a['n']}   |   {a['pct_dry']}% ever dry   |   "
           f"mean flow {a['mean']:.2f} (0-1)   |   ~{a['annual_precip']:.0f}\"/yr")
+    excl = excluded_note(a)
+    if excl:
+        print(f"  NOTE: {excl}")
     print(f"  TYPE: {a['type']}")
     mo = "  ".join(f"{m:02d}:{v:.2f}" for m, v in a["by_month"].items())
     print(f"  mean flow by month:  {mo}")
@@ -567,6 +626,13 @@ def source_json(a):
     return {
         "name": a["name"], "lat": a["lat"], "lon": a["lon"],
         "n": a["n"], "small_n": a["n"] < 25,
+        # Report accounting: `n` above is what the analysis actually used. A host
+        # showing "we have 12 reports, 9 usable" reads it from here.
+        "reports": {"total": a["n_total"], "used": a["n"],
+                    "excluded_before_precip": a["n_early"],
+                    "excluded_after_precip": a["n_late"],
+                    "precip_span": [a["precip_first"].isoformat(),
+                                    a["precip_last"].isoformat()]},
         "pct_dry": a["pct_dry"],
         "mean_flow": _r4(a["mean"]),
         "annual_precip_in": round(a["annual_precip"], 2),
@@ -601,35 +667,69 @@ def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache):
         "notes": notes,
     }
 
-_VALUE_FLAGS = ("--asof", "--harmonics", "--pool-radius")
-def _is_flag_value(argv, a):
-    """True if `a` is the space-separated value following a value-taking flag."""
-    for i, x in enumerate(argv):
-        if x in _VALUE_FLAGS and i + 1 < len(argv) and argv[i + 1] is a:
-            return True
-    return False
+# Flags that take a value, as {flag: (option key, parser, what it wants)}. The
+# parser is what turns the string into the option, and its name is what the user
+# is told when it rejects one.
+_VALUE_FLAGS = {
+    "--asof":        ("asof",      date.fromisoformat, "an ISO date, e.g. 2026-08-15"),
+    "--harmonics":   ("n_harm",    int,                "a whole number, e.g. 1"),
+    "--pool-radius": ("radius_km", float,              "a distance in km, e.g. 25"),
+}
+# Flags that are just on/off, as {flag: (option key, value when present)}.
+_BOOL_FLAGS = {
+    "--no-cache": ("use_cache", False),
+    "--no-pool":  ("do_pool",   False),
+    "--json":     ("as_json",   True),
+}
+
+def parse_args(argv):
+    """argv -> (files, options), in ONE pass that consumes each flag's value as it
+    goes. The previous two-pass version had to ask "is this argv element the value
+    of some flag?" after the fact, which it answered by object identity -- true
+    only by accident of both sides coming from the same list. Consuming inline
+    removes the question. Raises ValueError (message in the [error] house style)
+    for a missing value, an unparseable one, or an unknown flag."""
+    files = []
+    opts = {"asof": date.today(), "use_cache": True, "do_pool": True,
+            "as_json": False, "n_harm": 1, "radius_km": POOL_RADIUS_KM}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a.startswith("--"):
+            name, eq, inline = a.partition("=")
+            if name in _VALUE_FLAGS:
+                key, parse, want = _VALUE_FLAGS[name]
+                if eq:
+                    raw = inline
+                else:
+                    if i + 1 >= len(argv):          # flag in final position
+                        raise ValueError(f"{name} requires a value ({want})")
+                    i += 1
+                    raw = argv[i]
+                try:
+                    opts[key] = parse(raw)
+                except ValueError:
+                    raise ValueError(f"{name}: expected {want}, got {raw!r}")
+            elif name in _BOOL_FLAGS:
+                if eq:
+                    raise ValueError(f"{name} takes no value (got {inline!r})")
+                key, val = _BOOL_FLAGS[name]
+                opts[key] = val
+            else:
+                known = ", ".join(sorted(list(_VALUE_FLAGS) + list(_BOOL_FLAGS)))
+                raise ValueError(f"unknown flag {name}. Known flags: {known}")
+        else:
+            files.append(a)                          # "-" (stdin) lands here too
+        i += 1
+    return files, opts
 
 def main(argv):
-    files = [a for a in argv if not a.startswith("--") and not _is_flag_value(argv, a)]
-    asof = date.today()
-    use_cache = "--no-cache" not in argv
-    do_pool = "--no-pool" not in argv
-    as_json = "--json" in argv
-    n_harm = 1
-    radius_km = POOL_RADIUS_KM
-    for i, a in enumerate(argv):
-        if a == "--asof":
-            asof = date.fromisoformat(argv[i + 1])
-        elif a.startswith("--asof="):
-            asof = date.fromisoformat(a.split("=", 1)[1])
-        elif a == "--harmonics":
-            n_harm = int(argv[i + 1])
-        elif a.startswith("--harmonics="):
-            n_harm = int(a.split("=", 1)[1])
-        elif a == "--pool-radius":
-            radius_km = float(argv[i + 1])
-        elif a.startswith("--pool-radius="):
-            radius_km = float(a.split("=", 1)[1])
+    try:
+        files, opts = parse_args(argv)
+    except ValueError as e:
+        print(f"[error] {e}", file=sys.stderr); return 2
+    asof, use_cache, do_pool = opts["asof"], opts["use_cache"], opts["do_pool"]
+    as_json, n_harm, radius_km = opts["as_json"], opts["n_harm"], opts["radius_km"]
     # No files named? Take the CSV from stdin when it's a pipe, so `... | forecast.py`
     # works bare; a bare invocation from a terminal still prints the usage doc.
     if not files and not sys.stdin.isatty():
@@ -657,8 +757,11 @@ def main(argv):
     for src in sources:
         try:
             b = analyze_base(src, asof, use_cache, n_harm)
-            if b is None:
-                note("skip", "no reports within precip range", src["name"]); continue
+            if b is None or b["n"] == 0:
+                # Say WHY: "you gave me nothing" and "all your data predates my
+                # precipitation record" are very different problems for the author.
+                note("skip", excluded_note(b) if b else "no reports", src["name"])
+                continue
             bases.append(b)
         except Exception as e:
             note("error", str(e), src["name"])
