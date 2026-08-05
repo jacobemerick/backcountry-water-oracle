@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+"""
+Test suite for forecast.py
+==========================
+Run it:  python3 tests/test_forecast.py            (or: python3 -m unittest discover tests -t .)
+
+Three rules this suite holds itself to, from issue #15:
+
+  * STDLIB ONLY -- unittest, same dependency-free rule as the engine.
+  * OFFLINE -- no test may touch the network. Live calls would be slow, rude to a
+    free service, and ERA5 revisions would make the numbers flap. Every test that
+    needs precipitation gets it from a committed fixture through PRECIP_PROVIDER,
+    and urlopen is replaced with something that raises, so "did it fetch?" is
+    never ambiguous.
+  * DETERMINISTIC -- every test that reads an as-of date passes one explicitly.
+    Nothing here may depend on today's date.
+
+The CLI is exercised by calling main() in-process (capturing stdout/stderr and the
+return code) rather than by spawning processes: it is far faster, and it is the
+only way to keep the precip provider injected. One subprocess smoke test covers
+"does this still run as a script at all".
+"""
+import contextlib, io, json, os, subprocess, sys, unittest, urllib.request
+from datetime import date, timedelta
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, ROOT)
+import forecast                                                    # noqa: E402
+
+FIXTURES = os.path.join(HERE, "fixtures")
+PRECIP_DIR = os.path.join(FIXTURES, "precip")
+EXAMPLE_CSV = os.path.join(ROOT, "examples", "mazatzal-wilderness.csv")
+ASOF = date(2026, 7, 13)          # the worked example's as-of, used throughout
+
+# --------------------------------------------------------------------------- #
+# Fixture precip: real ERA5 series for the three Mazatzal coordinates, stored as
+# a start date plus the daily values (the dates are contiguous, so re-deriving
+# them costs nothing and saves ~2/3 of the file size). They run to 2026-07-30,
+# past the as-of the tests use, so the engine's trim path is always in play.
+# --------------------------------------------------------------------------- #
+_series_cache = {}
+
+def load_fixture_series(lat, lon):
+    key = (round(lat, 2), round(lon, 2))
+    if key not in _series_cache:
+        path = os.path.join(PRECIP_DIR, f"{key[0]}_{key[1]}.json")
+        raw = json.load(open(path))
+        start = date.fromisoformat(raw["start"])
+        vals = raw["precip_in"]
+        times = [(start + timedelta(days=i)).isoformat() for i in range(len(vals))]
+        _series_cache[key] = {"daily": {"time": times, "precipitation_sum": vals}}
+    d = _series_cache[key]["daily"]
+    return {"daily": {"time": list(d["time"]), "precipitation_sum": list(d["precipitation_sum"])}}
+
+def fixture_provider(lat, lon, end_date, use_cache=True):
+    """Deliberately returns the WHOLE series regardless of end_date -- the engine
+    is documented to trim, and every test run leans on that being true."""
+    return load_fixture_series(lat, lon)
+
+def _no_network(*a, **k):
+    raise AssertionError("test attempted a network call")
+
+class OfflineTestCase(unittest.TestCase):
+    """Installs the fixture provider and makes any real fetch an error."""
+    def setUp(self):
+        self._provider = forecast.PRECIP_PROVIDER
+        self._urlopen = urllib.request.urlopen
+        self._cache_dir = forecast.CACHE_DIR
+        forecast.PRECIP_PROVIDER = fixture_provider
+        urllib.request.urlopen = _no_network
+
+    def tearDown(self):
+        forecast.PRECIP_PROVIDER = self._provider
+        urllib.request.urlopen = self._urlopen
+        forecast.CACHE_DIR = self._cache_dir
+
+# --------------------------------------------------------------------------- #
+# CLI harness
+# --------------------------------------------------------------------------- #
+class _Tty(io.StringIO):
+    def isatty(self): return True
+
+class _Pipe(io.StringIO):
+    def isatty(self): return False
+
+def run_cli(args, stdin_text=None):
+    """Call main() with stdout/stderr captured. stdin_text=None means "a terminal",
+    which is what makes the bare-invocation usage path reachable."""
+    out, err = io.StringIO(), io.StringIO()
+    fake_stdin = _Tty() if stdin_text is None else _Pipe(stdin_text)
+    real_stdin, sys.stdin = sys.stdin, fake_stdin
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = forecast.main(args)
+    finally:
+        sys.stdin = real_stdin
+    return code, out.getvalue(), err.getvalue()
+
+def write_csv(tmpdir, name, rows, header="source,lat,lon,date,score"):
+    path = os.path.join(tmpdir, name)
+    with open(path, "w") as f:
+        f.write(header + "\n")
+        for r in rows:
+            f.write(r + "\n")
+    return path
+
+def source(name="S", lat=34.09, lon=-111.47, reports=None):
+    return {"name": name, "lat": lat, "lon": lon, "reports": reports or []}
+
+
+# =========================================================================== #
+# CSV loading -- the input contract
+# =========================================================================== #
+class TestLoadSources(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def test_groups_rows_by_name(self):
+        p = write_csv(self.tmp, "a.csv", [
+            "Spring,34.09,-111.47,2024-01-01,1.0",
+            "Spring,34.09,-111.47,2024-02-01,0.0",
+            "Creek,34.09,-111.45,2024-01-01,0.5",
+        ])
+        srcs = {s["name"]: s for s in forecast.load_sources([p])}
+        self.assertEqual(sorted(srcs), ["Creek", "Spring"])
+        self.assertEqual(len(srcs["Spring"]["reports"]), 2)
+
+    def test_reports_are_sorted_by_date(self):
+        p = write_csv(self.tmp, "b.csv", [
+            "S,34.09,-111.47,2024-06-01,0.5",
+            "S,34.09,-111.47,2024-01-01,1.0",
+            "S,34.09,-111.47,2024-03-01,0.2",
+        ])
+        dates = [d for d, _ in forecast.load_sources([p])[0]["reports"]]
+        self.assertEqual(dates, sorted(dates))
+
+    def test_scores_are_clamped_to_0_1(self):
+        p = write_csv(self.tmp, "c.csv", [
+            "S,34.09,-111.47,2024-01-01,5.0",
+            "S,34.09,-111.47,2024-02-01,-2.0",
+        ])
+        scores = [v for _, v in forecast.load_sources([p])[0]["reports"]]
+        self.assertEqual(scores, [1.0, 0.0])
+
+    def test_blank_source_name_is_skipped(self):
+        p = write_csv(self.tmp, "d.csv", [
+            ",34.09,-111.47,2024-01-01,1.0",
+            "S,34.09,-111.47,2024-02-01,0.5",
+        ])
+        self.assertEqual(len(forecast.load_sources([p])), 1)
+
+    def test_missing_columns_name_every_one(self):
+        p = write_csv(self.tmp, "e.csv", ["1,2"], header="a,b")
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources([p])
+        msg = str(cm.exception)
+        for col in ("source", "lat", "lon", "date", "score"):
+            self.assertIn(col, msg)
+
+    def test_empty_input_says_so(self):
+        p = os.path.join(self.tmp, "empty.csv")
+        open(p, "w").close()
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources([p])
+        self.assertIn("empty input", str(cm.exception))
+
+    def test_extra_columns_are_ignored(self):
+        p = write_csv(self.tmp, "f.csv", ["S,34.09,-111.47,2024-01-01,1.0,wet,xyz"],
+                      header="source,lat,lon,date,score,status,junk")
+        self.assertEqual(len(forecast.load_sources([p])[0]["reports"]), 1)
+
+    def test_several_files_merge_into_one_source(self):
+        a = write_csv(self.tmp, "g1.csv", ["S,34.09,-111.47,2024-01-01,1.0"])
+        b = write_csv(self.tmp, "g2.csv", ["S,34.09,-111.47,2024-02-01,0.5"])
+        srcs = forecast.load_sources([a, b])
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+
+class TestCoordinateConflicts(unittest.TestCase):
+    """Issue #9: the first row's coordinates used to win, silently."""
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def test_far_apart_rows_sharing_a_name_are_rejected(self):
+        p = write_csv(self.tmp, "dup.csv", [
+            "Dup,34.0,-111.0,2024-01-01,0.5",
+            "Dup,44.0,-121.0,2024-02-01,0.2",
+        ])
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources([p])
+        msg = str(cm.exception)
+        self.assertIn("Dup", msg)
+        self.assertIn("conflicting coordinates", msg)
+        self.assertIn("line 3", msg)                 # points at the offending row
+        self.assertIn("34.00000", msg)               # and shows both positions
+        self.assertIn("44.00000", msg)
+
+    def test_gps_scatter_within_tolerance_is_one_source(self):
+        p = write_csv(self.tmp, "scatter.csv", [
+            "Seep,34.09059,-111.46653,2024-01-01,0.5",
+            "Seep,34.09102,-111.46701,2024-02-01,0.2",
+            "Seep,34.09011,-111.46600,2024-03-01,0.9",
+        ])
+        srcs = forecast.load_sources([p])
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 3)
+        self.assertEqual(srcs[0]["lat"], 34.09059)   # first row's coords kept
+        self.assertEqual(srcs[0]["lon"], -111.46653)
+
+    def test_tolerance_boundary(self):
+        """Just inside passes, just outside fails -- pins COORD_TOLERANCE_KM."""
+        km_per_deg_lon = forecast._haversine_km(34.0, -111.0, 34.0, -110.0)
+        inside = forecast.COORD_TOLERANCE_KM * 0.9 / km_per_deg_lon
+        outside = forecast.COORD_TOLERANCE_KM * 1.1 / km_per_deg_lon
+        ok = write_csv(self.tmp, "in.csv", [
+            f"E,34.0,-111.0,2024-01-01,0.5", f"E,34.0,{-111.0 + inside},2024-02-01,0.2"])
+        self.assertEqual(len(forecast.load_sources([ok])), 1)
+        bad = write_csv(self.tmp, "out.csv", [
+            f"E,34.0,-111.0,2024-01-01,0.5", f"E,34.0,{-111.0 + outside},2024-02-01,0.2"])
+        with self.assertRaises(ValueError):
+            forecast.load_sources([bad])
+
+    def test_different_names_at_the_same_spot_are_fine(self):
+        p = write_csv(self.tmp, "same.csv", [
+            "A,34.09,-111.47,2024-01-01,0.5",
+            "B,34.09,-111.47,2024-02-01,0.2",
+        ])
+        self.assertEqual(len(forecast.load_sources([p])), 2)
+
+
+class TestStdin(unittest.TestCase):
+    """Issue #5: `-` reads the CSV from stdin."""
+    CSV = ("source,lat,lon,date,score\n"
+           "S,34.09,-111.47,2024-01-01,1.0\n"
+           "S,34.09,-111.47,2024-02-01,0.0\n")
+
+    def test_dash_reads_stdin(self):
+        real, sys.stdin = sys.stdin, _Pipe(self.CSV)
+        try:
+            srcs = forecast.load_sources(["-"])
+        finally:
+            sys.stdin = real
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+    def test_repeated_dash_is_ignored_not_an_error(self):
+        real, sys.stdin = sys.stdin, _Pipe(self.CSV)
+        try:
+            srcs = forecast.load_sources(["-", "-"])
+        finally:
+            sys.stdin = real
+        self.assertEqual(len(srcs[0]["reports"]), 2)      # not doubled, not empty
+
+    def test_file_and_stdin_merge(self):
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        p = write_csv(tmp, "f.csv", ["Other,34.09,-111.45,2024-01-01,0.5"])
+        real, sys.stdin = sys.stdin, _Pipe(self.CSV)
+        try:
+            srcs = forecast.load_sources([p, "-"])
+        finally:
+            sys.stdin = real
+        self.assertEqual(sorted(s["name"] for s in srcs), ["Other", "S"])
+
+
+# =========================================================================== #
+# Argument parsing -- issue #11
+# =========================================================================== #
+class TestParseArgs(unittest.TestCase):
+    def test_defaults(self):
+        files, opts = forecast.parse_args(["a.csv"])
+        self.assertEqual(files, ["a.csv"])
+        self.assertTrue(opts["use_cache"])
+        self.assertTrue(opts["do_pool"])
+        self.assertFalse(opts["as_json"])
+        self.assertEqual(opts["n_harm"], 1)
+        self.assertEqual(opts["radius_km"], forecast.POOL_RADIUS_KM)
+
+    def test_both_spellings_agree(self):
+        for argv in (["a.csv", "--asof", "2026-07-13"], ["a.csv", "--asof=2026-07-13"]):
+            files, opts = forecast.parse_args(argv)
+            self.assertEqual(files, ["a.csv"])
+            self.assertEqual(opts["asof"], date(2026, 7, 13))
+
+    def test_bool_flags(self):
+        _, opts = forecast.parse_args(["a.csv", "--no-cache", "--no-pool", "--json"])
+        self.assertFalse(opts["use_cache"])
+        self.assertFalse(opts["do_pool"])
+        self.assertTrue(opts["as_json"])
+
+    def test_value_flag_in_final_position_errors(self):
+        """The #11 crash: this used to raise IndexError and dump a traceback."""
+        for flag in ("--asof", "--harmonics", "--pool-radius"):
+            with self.assertRaises(ValueError) as cm:
+                forecast.parse_args(["a.csv", flag])
+            self.assertIn("requires a value", str(cm.exception))
+            self.assertIn(flag, str(cm.exception))
+
+    def test_unparseable_value_errors(self):
+        for argv in (["--asof", "tomorrow"], ["--harmonics", "two"],
+                     ["--pool-radius", "wide"]):
+            with self.assertRaises(ValueError) as cm:
+                forecast.parse_args(["a.csv"] + argv)
+            self.assertIn("expected", str(cm.exception))
+
+    def test_unknown_flag_is_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.parse_args(["a.csv", "--no-poo"])
+        self.assertIn("unknown flag", str(cm.exception))
+
+    def test_bool_flag_given_a_value_is_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.parse_args(["a.csv", "--json=yes"])
+        self.assertIn("takes no value", str(cm.exception))
+
+    def test_a_file_may_be_named_like_a_flag_value(self):
+        """What the old identity check protected, now true by construction."""
+        files, opts = forecast.parse_args(["--asof", "2026-07-13", "2026-07-13"])
+        self.assertEqual(files, ["2026-07-13"])
+        self.assertEqual(opts["asof"], date(2026, 7, 13))
+
+    def test_dash_is_a_file_not_a_flag(self):
+        files, _ = forecast.parse_args(["-", "--json"])
+        self.assertEqual(files, ["-"])
+
+    def test_several_files(self):
+        files, _ = forecast.parse_args(["a.csv", "--json", "b.csv"])
+        self.assertEqual(files, ["a.csv", "b.csv"])
+
+
+# =========================================================================== #
+# The precip provider seam -- issue #7
+# =========================================================================== #
+class TestPrecipProvider(OfflineTestCase):
+    def test_injected_provider_drives_the_engine(self):
+        calls = []
+        def provider(lat, lon, end_date, use_cache=True):
+            calls.append((round(lat, 2), round(lon, 2), end_date, use_cache))
+            return load_fixture_series(lat, lon)
+        forecast.PRECIP_PROVIDER = provider
+        srcs = forecast.load_sources([EXAMPLE_CSV])
+        rows = [forecast.analyze(s, ASOF) for s in srcs]
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(r is not None for r in rows))
+        self.assertTrue(all(c[2] == ASOF for c in calls))
+
+    def test_engine_trims_an_over_long_series(self):
+        """A host may keep one long series and serve every as-of from it; the read
+        must not depend on how much extra it returned."""
+        def exact(lat, lon, end_date, use_cache=True):
+            full = load_fixture_series(lat, lon)
+            return forecast._trim_daily(full, end_date)
+        srcs = forecast.load_sources([EXAMPLE_CSV])
+        long_rows = [forecast.analyze(s, ASOF) for s in srcs]      # fixture: full series
+        forecast.PRECIP_PROVIDER = exact
+        exact_rows = [forecast.analyze(s, ASOF) for s in srcs]
+        for a, b in zip(long_rows, exact_rows):
+            self.assertEqual(a["best"], b["best"])
+            self.assertEqual(a["pred"], b["pred"])
+            self.assertEqual(a["curval"], b["curval"])
+            self.assertEqual(a["ctrl_cors"], b["ctrl_cors"])
+
+    def test_malformed_providers_fail_at_the_seam(self):
+        cases = {
+            "returns None":    lambda *a, **k: None,
+            "no daily key":    lambda *a, **k: {"hourly": {}},
+            "length mismatch": lambda *a, **k: {"daily": {"time": ["2007-01-01", "2007-01-02"],
+                                                          "precipitation_sum": [0.1]}},
+            "empty series":    lambda *a, **k: {"daily": {"time": [], "precipitation_sum": []}},
+            "not a dict":      lambda *a, **k: [1, 2, 3],
+        }
+        src = source(reports=[(date(2024, 1, 1), 1.0)])
+        for label, bad in cases.items():
+            with self.subTest(label):
+                forecast.PRECIP_PROVIDER = bad
+                with self.assertRaises(ValueError) as cm:
+                    forecast.analyze(src, ASOF)
+                self.assertIn("precip provider", str(cm.exception))
+
+    def test_provider_receives_the_lagged_end_date(self):
+        """The engine never asks for data ERA5 cannot have yet."""
+        seen = []
+        def provider(lat, lon, end_date, use_cache=True):
+            seen.append(end_date)
+            return load_fixture_series(lat, lon)
+        forecast.PRECIP_PROVIDER = provider
+        far_future = date.today() + timedelta(days=365)
+        forecast.analyze(source(reports=[(date(2024, 1, 1), 1.0)]), far_future)
+        self.assertLessEqual(seen[0], date.today() - timedelta(days=forecast.ERA5_LAG_DAYS))
+
+
+class TestPrecipCache(unittest.TestCase):
+    """Issue #6: the cache key must not embed the end date."""
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self._cache_dir = forecast.CACHE_DIR
+        self._urlopen = urllib.request.urlopen
+        forecast.CACHE_DIR = self.tmp
+        self.fetched = []
+
+        def stub(url, timeout=0):
+            self.fetched.append(url)
+            end = date.fromisoformat(url.split("end_date=")[1][:10])
+            start = date.fromisoformat(forecast.PRECIP_START)
+            days = (end - start).days + 1
+            return io.BytesIO(json.dumps({"daily": {
+                "time": [(start + timedelta(days=i)).isoformat() for i in range(days)],
+                "precipitation_sum": [round((i % 37) * 0.01, 3) for i in range(days)],
+            }}).encode())
+        urllib.request.urlopen = stub
+
+    def tearDown(self):
+        forecast.CACHE_DIR = self._cache_dir
+        urllib.request.urlopen = self._urlopen
+
+    def test_cache_path_is_coordinate_only(self):
+        p = forecast._cache_path(34.09059, -111.46653)
+        self.assertEqual(os.path.basename(p), "34.09_-111.47.json")
+        self.assertNotIn("2026", os.path.basename(p))
+
+    def test_one_fetch_serves_many_as_of_dates(self):
+        forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30))
+        self.assertEqual(len(self.fetched), 1)
+        for asof in (date(2026, 7, 13), date(2025, 6, 1), date(2020, 3, 15)):
+            forecast.open_meteo_provider(34.09, -111.47, asof)
+        self.assertEqual(len(self.fetched), 1, "earlier dates must reuse the cache")
+        self.assertEqual(len(os.listdir(self.tmp)), 1, "one file per coordinate")
+
+    def test_a_cache_that_stops_short_refetches(self):
+        forecast.open_meteo_provider(34.09, -111.47, date(2026, 1, 1))
+        forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30))
+        self.assertEqual(len(self.fetched), 2)
+        self.assertIn("end_date=2026-07-30", self.fetched[1])
+        self.assertIn(f"start_date={forecast.PRECIP_START}", self.fetched[1])
+
+    def test_cached_series_is_trimmed_to_the_request(self):
+        long = forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30))
+        short = forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 13))
+        self.assertEqual(long["daily"]["time"][-1], "2026-07-30")
+        self.assertEqual(short["daily"]["time"][-1], "2026-07-13")
+        self.assertEqual(len(short["daily"]["time"]), len(short["daily"]["precipitation_sum"]))
+
+    def test_no_cache_bypasses_a_valid_cache(self):
+        forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30))
+        forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30), use_cache=False)
+        self.assertEqual(len(self.fetched), 2)
+
+    def test_unreadable_cache_is_a_miss_not_a_crash(self):
+        with open(forecast._cache_path(34.09, -111.47), "w") as f:
+            f.write("{not json")
+        data = forecast.open_meteo_provider(34.09, -111.47, date(2026, 7, 30))
+        self.assertEqual(len(self.fetched), 1)
+        self.assertTrue(data["daily"]["time"])
+
+
+# =========================================================================== #
+# Statistics -- mostly invariants, since the exact values are what is under test
+# =========================================================================== #
+class TestStats(unittest.TestCase):
+    def test_ranks_average_ties(self):
+        self.assertEqual(forecast._ranks([1, 2, 2, 3]), [1.0, 2.5, 2.5, 4.0])
+        self.assertEqual(forecast._ranks([5, 5, 5]), [2.0, 2.0, 2.0])
+
+    def test_spearman_perfect_monotonic(self):
+        xs = [1, 2, 3, 4, 5]
+        self.assertAlmostEqual(forecast.spearman(xs, [10, 20, 30, 40, 50]), 1.0)
+        self.assertAlmostEqual(forecast.spearman(xs, [50, 40, 30, 20, 10]), -1.0)
+
+    def test_spearman_is_rank_based_not_linear(self):
+        """Monotone but wildly non-linear still reads as a perfect rank match."""
+        self.assertAlmostEqual(forecast.spearman([1, 2, 3, 4], [1, 4, 900, 10000]), 1.0)
+
+    def test_constant_vector_gives_zero_not_a_zero_division(self):
+        self.assertEqual(forecast._pearson([1, 2, 3], [5, 5, 5]), 0.0)
+        self.assertEqual(forecast.spearman([1, 2, 3], [5, 5, 5]), 0.0)
+
+    def test_deseasonalize_removes_the_mean_when_data_is_thin(self):
+        dates = [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)]
+        out = forecast.deseasonalize(dates, [1.0, 2.0, 3.0])
+        self.assertAlmostEqual(sum(out), 0.0)
+
+    def test_deseasonalize_removes_a_pure_annual_cycle(self):
+        dates = [date(2024, 1, 1) + timedelta(days=7 * i) for i in range(52)]
+        import math
+        vals = [math.sin(2 * math.pi * d.timetuple().tm_yday / 365.25) for d in dates]
+        resid = forecast.deseasonalize(dates, vals)
+        self.assertLess(max(abs(r) for r in resid), 0.05)
+
+    def test_deseasonalize_keeps_signal_that_is_not_seasonal(self):
+        dates = [date(2024, 1, 1) + timedelta(days=7 * i) for i in range(52)]
+        vals = [0.0] * 52
+        vals[10] = 5.0                                   # a one-off spike survives
+        resid = forecast.deseasonalize(dates, vals)
+        self.assertGreater(max(resid), 1.0)
+
+    def test_solve_returns_none_for_a_singular_system(self):
+        self.assertIsNone(forecast._solve([[1.0, 2.0], [2.0, 4.0]], [1.0, 2.0]))
+        self.assertIsNotNone(forecast._solve([[2.0, 0.0], [0.0, 2.0]], [2.0, 4.0]))
+
+    def test_haversine_against_known_distances(self):
+        self.assertAlmostEqual(forecast._haversine_km(34.0, -111.0, 34.0, -111.0), 0.0)
+        # one degree of latitude is ~111.19 km anywhere
+        self.assertAlmostEqual(forecast._haversine_km(34.0, -111.0, 35.0, -111.0), 111.19, places=1)
+        self.assertTrue(forecast._haversine_km(0, 0, 0, 180) > 20000)     # antipodal-ish
+
+    def test_fisher_z_is_finite_at_the_extremes(self):
+        for r in (-1.0, 1.0, -1.5, 1.5):
+            self.assertTrue(abs(forecast._fisher_z(r)) < 10)
+
+    def test_median(self):
+        self.assertEqual(forecast._median([3, 1, 2]), 2)
+        self.assertEqual(forecast._median([4, 1, 3, 2]), 2.5)
+
+    def test_survival_note_thresholds(self):
+        self.assertIn("no raw signal", forecast.survival_note(0.01, 0.01))
+        self.assertIn("survives", forecast.survival_note(0.50, 0.40))
+        self.assertIn("real signal remains", forecast.survival_note(0.50, 0.25))
+        self.assertIn("seasonal artifact", forecast.survival_note(0.50, 0.05))
+
+
+class TestWindowSum(unittest.TestCase):
+    def setUp(self):
+        start = date(2024, 1, 1)
+        n = 100
+        self.idx = forecast.build_precip_index({"daily": {
+            "time": [(start + timedelta(days=i)).isoformat() for i in range(n)],
+            "precipitation_sum": [1.0] * n,
+        }})
+
+    def test_simple_window(self):
+        self.assertAlmostEqual(forecast.window_sum(self.idx, date(2024, 2, 1), 10), 10.0)
+
+    def test_window_reaching_before_the_series_start_clamps(self):
+        total = forecast.window_sum(self.idx, date(2024, 1, 5), 365)
+        self.assertAlmostEqual(total, 5.0)               # only 5 days exist
+
+    def test_end_past_the_series_end_clamps(self):
+        a = forecast.window_sum(self.idx, date(2030, 1, 1), 10)
+        b = forecast.window_sum(self.idx, self.idx["last"], 10)
+        self.assertAlmostEqual(a, b)
+
+    def test_none_values_read_as_zero(self):
+        idx = forecast.build_precip_index({"daily": {
+            "time": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            "precipitation_sum": [1.0, None, 2.0],
+        }})
+        self.assertAlmostEqual(forecast.window_sum(idx, date(2024, 1, 3), 3), 3.0)
+
+
+class TestTrimDaily(unittest.TestCase):
+    def series(self, n=10):
+        start = date(2024, 1, 1)
+        return {"daily": {
+            "time": [(start + timedelta(days=i)).isoformat() for i in range(n)],
+            "precipitation_sum": [float(i) for i in range(n)]}}
+
+    def test_trims_to_the_requested_end(self):
+        out = forecast._trim_daily(self.series(), date(2024, 1, 5))
+        self.assertEqual(out["daily"]["time"][-1], "2024-01-05")
+        self.assertEqual(len(out["daily"]["time"]), len(out["daily"]["precipitation_sum"]))
+
+    def test_shorter_series_is_untouched(self):
+        s = self.series()
+        self.assertIs(forecast._trim_daily(s, date(2030, 1, 1)), s)
+
+    def test_does_not_mutate_its_input(self):
+        s = self.series()
+        forecast._trim_daily(s, date(2024, 1, 3))
+        self.assertEqual(len(s["daily"]["time"]), 10)
+
+
+# =========================================================================== #
+# Pooling -- invariants, since the point is HOW MUCH is borrowed and why
+# =========================================================================== #
+class TestPooling(unittest.TestCase):
+    def test_a_lone_source_borrows_nothing(self):
+        out = forecast._pool_window([(0.5, 40)])
+        self.assertEqual(out, [(0.5, 0.0)])
+
+    def test_a_coherent_group_pools_harder_than_a_split_one(self):
+        agree = forecast._pool_window([(0.50, 20), (0.52, 20), (0.48, 20)])
+        differ = forecast._pool_window([(0.90, 20), (0.05, 20), (-0.40, 20)])
+        self.assertGreater(agree[0][1], differ[0][1])
+
+    def test_small_n_borrows_more_than_data_rich(self):
+        out = forecast._pool_window([(0.5, 200), (0.5, 100), (0.5, 12)])
+        borrowed = [b for _, b in out]
+        self.assertLess(borrowed[0], borrowed[1])
+        self.assertLess(borrowed[1], borrowed[2])
+
+    def test_borrowed_fraction_stays_a_fraction(self):
+        for items in ([(0.5, 200), (0.5, 12)], [(0.9, 20), (-0.4, 15), (0.1, 300)]):
+            for _, b in forecast._pool_window(items):
+                self.assertGreaterEqual(b, 0.0)
+                self.assertLessEqual(b, 1.0)
+
+    def test_pooled_r_lands_between_own_and_the_group(self):
+        items = [(0.20, 10), (0.60, 200)]
+        out = forecast._pool_window(items)
+        self.assertGreater(out[0][0], 0.20)              # small-n pulled up toward .6
+        self.assertLess(out[0][0], 0.60)
+
+    def test_tau2_never_collapses_to_all_or_nothing(self):
+        """The k=3 lumpiness fix: borrowing must be graded, not 0% / 100%."""
+        out = forecast._pool_window([(0.50, 160), (0.46, 58), (0.40, 15)])
+        for _, b in out:
+            self.assertGreater(b, 0.0)
+            self.assertLess(b, 1.0)
+
+    def test_pool_controlled_is_order_independent(self):
+        """It must read each source's own `ctrl`, never a neighbour's pooled result."""
+        def bases():
+            return [{"name": n, "lat": la, "lon": lo, "n": nn,
+                     "ctrl": {f"{w}d": r for w in forecast.WINDOWS},
+                     "pooled_ctrl": {}, "borrowed": {}}
+                    for n, la, lo, nn, r in [
+                        ("A", 34.090, -111.450, 160, 0.55),
+                        ("B", 34.091, -111.470, 58, 0.45),
+                        ("C", 34.092, -111.490, 15, 0.20)]]
+        fwd = bases()
+        forecast.pool_controlled(fwd, forecast.POOL_RADIUS_KM)
+        rev = list(reversed(bases()))
+        forecast.pool_controlled(rev, forecast.POOL_RADIUS_KM)
+        rev_by_name = {b["name"]: b for b in rev}
+        for b in fwd:
+            self.assertEqual(b["pooled_ctrl"], rev_by_name[b["name"]]["pooled_ctrl"])
+
+    def test_sources_outside_the_radius_are_not_neighbours(self):
+        far = [{"name": "A", "lat": 34.0, "lon": -111.0, "n": 20,
+                "ctrl": {f"{w}d": 0.6 for w in forecast.WINDOWS},
+                "pooled_ctrl": {}, "borrowed": {}},
+               {"name": "B", "lat": 44.0, "lon": -121.0, "n": 20,
+                "ctrl": {f"{w}d": -0.6 for w in forecast.WINDOWS},
+                "pooled_ctrl": {}, "borrowed": {}}]
+        forecast.pool_controlled(far, forecast.POOL_RADIUS_KM)
+        for b in far:
+            self.assertEqual(b["group_n"], 1)
+            self.assertEqual(b["borrowed"]["30d"], 0.0)
+            self.assertAlmostEqual(b["pooled_ctrl"]["30d"], b["ctrl"]["30d"])
+
+
+# =========================================================================== #
+# Verdict / classification / the analog read
+#
+# These three encode judgement calls -- where "marginal" ends, what counts as
+# buffered, how many past reports the current read averages. Mutation testing
+# found them pinned only by the golden payload, which tells you SOMETHING moved
+# but not what, so they get named tests of their own.
+# =========================================================================== #
+class TestVerdicts(unittest.TestCase):
+    def test_running_phrase_boundaries(self):
+        self.assertEqual(forecast.running_phrase(0.00), "Likely DRY")
+        self.assertEqual(forecast.running_phrase(0.099), "Likely DRY")
+        self.assertIn("Marginal", forecast.running_phrase(0.10))
+        self.assertIn("Marginal", forecast.running_phrase(0.299))
+        self.assertIn("Probably has water", forecast.running_phrase(0.30))
+        self.assertIn("Probably has water", forecast.running_phrase(0.499))
+        self.assertIn("moderate", forecast.running_phrase(0.50))
+        self.assertIn("moderate", forecast.running_phrase(0.699))
+        self.assertIn("flowing well", forecast.running_phrase(0.70))
+        self.assertIn("flowing well", forecast.running_phrase(1.00))
+
+    def test_classify(self):
+        self.assertIn("Reliable", forecast.classify(0, 365))
+        self.assertIn("Reliable", forecast.classify(10, 30))    # dryness wins first
+        self.assertIn("Flashy", forecast.classify(11, 90))
+        self.assertIn("Intermediate", forecast.classify(11, 180))
+
+
+class TestNearestAnalog(OfflineTestCase):
+    def test_averages_exactly_the_five_closest_analogs(self):
+        """Precip climbs steadily, so every window sum climbs with the date: the
+        closest analogs to an as-of at the end are simply the latest reports. Score
+        the last five 1.0 and everything earlier 0.0, and the read is 1.0 only if
+        exactly five went into it (seven would give 5/7)."""
+        start, n = date(2024, 1, 1), 400
+        series = {"daily": {
+            "time": [(start + timedelta(days=i)).isoformat() for i in range(n)],
+            "precipitation_sum": [round(i * 0.001, 4) for i in range(n)]}}
+        forecast.PRECIP_PROVIDER = lambda lat, lon, end, use_cache=True: series
+
+        report_days = list(range(100, 400, 10))                 # 30 reports
+        reports = [(start + timedelta(days=d), 1.0 if d >= report_days[-5] else 0.0)
+                   for d in report_days]
+        asof = start + timedelta(days=n - 1)
+        a = forecast.analyze(source(reports=reports), asof)
+        self.assertAlmostEqual(a["pred"], 1.0)
+        self.assertEqual(a["n"], 30)
+
+    def test_the_read_uses_the_best_window(self):
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        for s in json.loads(out)["sources"]:
+            self.assertEqual(s["best"]["days"], int(s["best"]["window"][:-1]))
+            self.assertGreaterEqual(s["precip_in"], 0.0)
+
+
+# =========================================================================== #
+# Report accounting -- issue #10
+# =========================================================================== #
+class TestReportAccounting(OfflineTestCase):
+    def src_with(self, dates):
+        return source(reports=[(d, 0.5) for d in dates])
+
+    def test_counts_reports_that_predate_the_record(self):
+        b = forecast.analyze_base(self.src_with(
+            [date(1999, 1, 1), date(2001, 2, 1), date(2024, 3, 1), date(2024, 6, 1)]), ASOF)
+        self.assertEqual(b["n"], 2)
+        self.assertEqual(b["n_total"], 4)
+        self.assertEqual(b["n_early"], 2)
+        self.assertEqual(b["n_late"], 0)
+
+    def test_counts_reports_that_postdate_the_record(self):
+        b = forecast.analyze_base(self.src_with(
+            [date(2024, 3, 1), date(2024, 6, 1), date(2030, 1, 1)]), ASOF)
+        self.assertEqual(b["n"], 2)
+        self.assertEqual(b["n_late"], 1)
+
+    def test_nothing_usable_returns_counts_not_none(self):
+        b = forecast.analyze_base(self.src_with([date(1999, 1, 1), date(2001, 2, 1)]), ASOF)
+        self.assertIsNotNone(b)
+        self.assertEqual(b["n"], 0)
+        self.assertEqual(b["n_early"], 2)
+
+    def test_analyze_still_returns_none_when_nothing_is_usable(self):
+        self.assertIsNone(forecast.analyze(self.src_with([date(1999, 1, 1)]), ASOF))
+
+    def test_excluded_note_wording(self):
+        b = forecast.analyze_base(self.src_with(
+            [date(1999, 1, 1), date(2024, 3, 1), date(2024, 6, 1)]), ASOF)
+        note = forecast.excluded_note(b)
+        self.assertIn("2 of 3 reports usable", note)
+        self.assertIn("1 predates", note)               # singular agrees
+        b2 = forecast.analyze_base(self.src_with(
+            [date(1999, 1, 1), date(2000, 1, 1), date(2024, 3, 1), date(2024, 6, 1)]), ASOF)
+        self.assertIn("2 predate ", forecast.excluded_note(b2))     # plural agrees
+
+    def test_no_note_when_nothing_was_excluded(self):
+        b = forecast.analyze_base(self.src_with([date(2024, 3, 1), date(2024, 6, 1)]), ASOF)
+        self.assertIsNone(forecast.excluded_note(b))
+
+    def test_stats_describe_the_usable_reports(self):
+        """pct_dry and mean are computed on survivors -- documented, so pin it."""
+        src = source(reports=[(date(1999, 1, 1), 0.0), (date(2024, 3, 1), 1.0),
+                              (date(2024, 6, 1), 1.0)])
+        b = forecast.analyze_base(src, ASOF)
+        self.assertEqual(b["n"], 2)
+        self.assertEqual(b["pct_dry"], 0)               # the 0.0 was pre-record
+        self.assertAlmostEqual(b["mean"], 1.0)
+
+
+# =========================================================================== #
+# CLI behaviour: exit codes, stream routing, JSON validity
+# =========================================================================== #
+class TestCLI(OfflineTestCase):
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def test_success_exit_code_and_summary(self):
+        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        self.assertEqual(code, 0)
+        self.assertIn("SUMMARY", out)
+        self.assertIn("Chilson Spring", out)
+        self.assertEqual(err, "")
+
+    def test_no_files_on_a_terminal_prints_usage(self):
+        code, out, _ = run_cli([])
+        self.assertEqual(code, 1)
+        self.assertIn("Usage:", out)
+
+    def test_no_files_with_piped_stdin_reads_stdin(self):
+        csv = ("source,lat,lon,date,score\n"
+               "S,34.09,-111.47,2024-01-01,1.0\nS,34.09,-111.47,2024-06-01,0.0\n")
+        code, out, _ = run_cli(["--asof", "2026-07-13"], stdin_text=csv)
+        self.assertEqual(code, 0)
+        self.assertIn("S ", out)
+
+    def test_bad_csv_exits_2(self):
+        p = write_csv(self.tmp, "bad.csv", ["1,2"], header="a,b")
+        code, _, _ = run_cli([p])
+        self.assertEqual(code, 2)
+
+    def test_bad_flag_exits_2_and_writes_to_stderr(self):
+        code, out, err = run_cli([EXAMPLE_CSV, "--asof"])
+        self.assertEqual(code, 2)
+        self.assertIn("[error]", err)
+        self.assertEqual(out, "")
+
+    def test_json_stdout_is_pure_json(self):
+        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(code, 0)
+        payload = json.loads(out)                        # raises if anything leaked
+        self.assertEqual(len(payload["sources"]), 3)
+
+    def test_json_stays_valid_when_a_source_is_skipped(self):
+        p = write_csv(self.tmp, "mixed.csv", [
+            "Ancient,34.09,-111.47,1999-01-01,0.5",
+            "Ancient,34.09,-111.47,2001-01-01,0.5",
+            "Good,34.09,-111.45,2024-01-01,1.0",
+            "Good,34.09,-111.45,2024-06-01,0.0",
+        ])
+        code, out, err = run_cli([p, "--asof", "2026-07-13", "--json"])
+        payload = json.loads(out)
+        self.assertEqual(len(payload["sources"]), 1)
+        self.assertEqual(len(payload["notes"]), 1)
+        self.assertEqual(payload["notes"][0]["kind"], "skip")
+        self.assertIn("predate", payload["notes"][0]["message"])
+        self.assertIn("[skip]", err)                     # and it reached stderr
+        self.assertNotIn("[skip]", out)
+
+    def test_json_stays_valid_when_the_csv_is_rejected(self):
+        p = write_csv(self.tmp, "bad2.csv", ["1,2"], header="a,b")
+        code, out, err = run_cli([p, "--json"])
+        self.assertEqual(code, 2)
+        payload = json.loads(out)
+        self.assertEqual(payload["sources"], [])
+        self.assertEqual(payload["notes"][0]["kind"], "error")
+
+    def test_text_mode_diagnostics_go_to_stdout(self):
+        """Deliberate asymmetry: only --json reserves stdout."""
+        p = write_csv(self.tmp, "bad3.csv", ["1,2"], header="a,b")
+        code, out, err = run_cli([p])
+        self.assertIn("[error]", out)
+        self.assertEqual(err, "")
+
+    def test_no_pool_reports_no_borrowing(self):
+        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json", "--no-pool"])
+        payload = json.loads(out)
+        self.assertFalse(payload["params"]["pool"])
+        for s in payload["sources"]:
+            self.assertEqual(s["best"]["borrowed"], 0.0)
+            self.assertEqual(s["best"]["group_n"], 1)
+
+    def test_params_echo_the_run(self):
+        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json",
+                                "--pool-radius", "15", "--harmonics", "2"])
+        params = json.loads(out)["params"]
+        self.assertEqual(params["pool_radius_km"], 15.0)
+        self.assertEqual(params["harmonics"], 2)
+        self.assertEqual(params["windows"], forecast.WINDOWS)
+
+
+class TestJsonSchema(OfflineTestCase):
+    """The --json payload is an API the site reads; renaming a field breaks it."""
+    def setUp(self):
+        super().setUp()
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.payload = json.loads(out)
+        self.src = self.payload["sources"][0]
+
+    def test_top_level_keys(self):
+        self.assertEqual(sorted(self.payload), ["asof", "notes", "params", "sources"])
+
+    def test_source_keys(self):
+        self.assertEqual(sorted(self.src), sorted([
+            "name", "lat", "lon", "n", "small_n", "reports", "pct_dry", "mean_flow",
+            "annual_precip_in", "type", "mean_flow_by_month", "correlations", "best",
+            "asof", "precip_in", "predicted_flow", "verdict", "harmonics"]))
+
+    def test_best_keys(self):
+        self.assertEqual(sorted(self.src["best"]), sorted([
+            "window", "days", "r", "own_ctrl_r", "raw_r", "borrowed", "group_n",
+            "signal_check"]))
+
+    def test_reports_keys(self):
+        self.assertEqual(sorted(self.src["reports"]), sorted([
+            "total", "used", "excluded_before_precip", "excluded_after_precip",
+            "precip_span"]))
+
+    def test_correlation_rows_cover_every_window(self):
+        got = sorted(c["days"] for c in self.src["correlations"])
+        self.assertEqual(got, sorted(forecast.WINDOWS))
+        for c in self.src["correlations"]:
+            self.assertEqual(sorted(c), ["ctrl_r", "days", "raw_r", "window"])
+
+    def test_sources_are_in_input_order(self):
+        names = [s["name"] for s in self.payload["sources"]]
+        want = [s["name"] for s in forecast.load_sources([EXAMPLE_CSV])]
+        self.assertEqual(names, want)
+
+    def test_reports_used_matches_n(self):
+        for s in self.payload["sources"]:
+            self.assertEqual(s["reports"]["used"], s["n"])
+
+    def test_small_n_matches_the_threshold(self):
+        for s in self.payload["sources"]:
+            self.assertEqual(s["small_n"], s["n"] < 25)
+
+    def test_json_is_serialisable_and_round_trips(self):
+        self.assertEqual(json.loads(json.dumps(self.payload)), self.payload)
+
+
+# =========================================================================== #
+# Golden regression: the whole payload, on the worked example
+# =========================================================================== #
+class TestGolden(OfflineTestCase):
+    """Real ERA5 fixture in, full --json payload out, compared field by field.
+
+    This is the test that catches silent numeric drift from a refactor -- the
+    failure mode nobody can eyeball, in a tool whose wrong answers look just as
+    plausible as its right ones. Regenerate deliberately (see tests/README.md)
+    and read the diff before accepting it."""
+    GOLDEN = os.path.join(FIXTURES, "golden-mazatzal.json")
+
+    def test_matches_the_recorded_payload(self):
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        got = json.loads(out)
+        want = json.load(open(self.GOLDEN))
+        self.assertEqual(got["params"], want["params"])
+        self.assertEqual(got["asof"], want["asof"])
+        self.assertEqual(len(got["sources"]), len(want["sources"]))
+        for g, w in zip(got["sources"], want["sources"]):
+            self.assertEqual(g, w, f"payload drift for {w['name']}")
+        self.assertEqual(got["notes"], want["notes"])
+
+    def test_the_documented_headline_numbers(self):
+        """Spelled out separately from the golden blob: these exact numbers appear
+        in the README and in the PR history, so a change here is a docs change."""
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        by_name = {s["name"]: s for s in json.loads(out)["sources"]}
+        kahuna = by_name["Big Kahuna Falls - Mazatzal Wilderness"]
+        castersen = by_name["Castersen Seep"]
+        chilson = by_name["Chilson Spring"]
+
+        self.assertEqual(kahuna["n"], 160)
+        self.assertEqual(castersen["n"], 15)
+        self.assertEqual(chilson["n"], 58)
+
+        self.assertEqual(kahuna["best"]["window"], "30d")
+        self.assertEqual(castersen["best"]["window"], "60d")
+        self.assertEqual(chilson["best"]["window"], "90d")
+
+        # the hydrologic-memory spectrum: buffered spring, flashy falls
+        self.assertEqual(chilson["type"], "Reliable (groundwater-buffered)")
+        self.assertEqual(kahuna["type"], "Flashy (needs recent rain)")
+        self.assertLessEqual(chilson["pct_dry"], 10)
+
+        # small-n Castersen leans hardest on its neighbours; data-rich Kahuna least
+        self.assertGreater(castersen["best"]["borrowed"], chilson["best"]["borrowed"])
+        self.assertGreater(chilson["best"]["borrowed"], kahuna["best"]["borrowed"])
+        self.assertTrue(castersen["small_n"])
+
+        # season control collapsed Castersen's headline: raw 180d .72 -> ctrl ~.09
+        c180 = next(c for c in castersen["correlations"] if c["window"] == "180d")
+        self.assertGreater(c180["raw_r"], 0.70)
+        self.assertLess(abs(c180["ctrl_r"]), 0.15)
+
+
+# =========================================================================== #
+# It still runs as a script
+# =========================================================================== #
+class TestRunsAsAScript(unittest.TestCase):
+    def test_script_entry_point(self):
+        """One subprocess, on a path that fails before any network call."""
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "forecast.py"), "--asof"],
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("[error]", r.stderr)
+        self.assertIn("requires a value", r.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

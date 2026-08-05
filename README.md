@@ -82,6 +82,21 @@ No new dependency, no change to the CLI, and the engine stays sterile — it sti
 only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backends
 (IEM PRISM/MRMS) will be providers on this same seam.
 
+## Tests
+
+```bash
+python3 tests/test_forecast.py
+```
+
+No dependencies, no config, **no network**, ~1 second. Precipitation comes from a
+committed fixture through `PRECIP_PROVIDER`, and every test that reads an as-of
+date passes one explicitly, so nothing depends on today's date or on ERA5 not
+being revised. A golden test compares the entire `--json` payload for the worked
+example, which is what catches silent numeric drift — the failure mode you can't
+eyeball in a tool whose wrong answers look as plausible as its right ones. See
+[`tests/README.md`](tests/README.md), especially before regenerating that golden
+file.
+
 ## The input contract (CSV schema)
 
 The engine understands exactly one thing:
