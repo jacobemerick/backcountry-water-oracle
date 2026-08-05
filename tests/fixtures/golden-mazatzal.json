@@ -1,0 +1,276 @@
+{
+  "asof": "2026-07-13",
+  "params": {
+    "pool": true,
+    "pool_radius_km": 25.0,
+    "harmonics": 1,
+    "cache": true,
+    "windows": [
+      30,
+      60,
+      90,
+      180,
+      270,
+      365
+    ]
+  },
+  "sources": [
+    {
+      "name": "Big Kahuna Falls - Mazatzal Wilderness",
+      "lat": 34.08716,
+      "lon": -111.45293,
+      "n": 160,
+      "small_n": false,
+      "reports": {
+        "total": 160,
+        "used": 160,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-13"
+        ]
+      },
+      "pct_dry": 14,
+      "mean_flow": 0.4188,
+      "annual_precip_in": 19.22,
+      "type": "Flashy (needs recent rain)",
+      "mean_flow_by_month": {
+        "1": 0.5846,
+        "2": 0.6308,
+        "3": 0.6074,
+        "4": 0.4348,
+        "5": 0.28,
+        "6": 0.0889,
+        "8": 0.3667,
+        "9": 0.2118,
+        "10": 0.3857,
+        "11": 0.3333,
+        "12": 0.45
+      },
+      "correlations": [
+        {
+          "window": "90d",
+          "days": 90,
+          "raw_r": 0.623,
+          "ctrl_r": 0.5004
+        },
+        {
+          "window": "60d",
+          "days": 60,
+          "raw_r": 0.6097,
+          "ctrl_r": 0.5563
+        },
+        {
+          "window": "30d",
+          "days": 30,
+          "raw_r": 0.5708,
+          "ctrl_r": 0.5584
+        },
+        {
+          "window": "180d",
+          "days": 180,
+          "raw_r": 0.5672,
+          "ctrl_r": 0.4507
+        },
+        {
+          "window": "270d",
+          "days": 270,
+          "raw_r": 0.4175,
+          "ctrl_r": 0.4401
+        },
+        {
+          "window": "365d",
+          "days": 365,
+          "raw_r": 0.2702,
+          "ctrl_r": 0.3029
+        }
+      ],
+      "best": {
+        "window": "30d",
+        "days": 30,
+        "r": 0.5484,
+        "own_ctrl_r": 0.5584,
+        "raw_r": 0.5708,
+        "borrowed": 0.0903,
+        "group_n": 3,
+        "signal_check": "survives -> genuine rain response"
+      },
+      "asof": "2026-07-13",
+      "precip_in": 0.548,
+      "predicted_flow": 0.36,
+      "verdict": "Probably has water (light flow / pools)",
+      "harmonics": 1
+    },
+    {
+      "name": "Castersen Seep",
+      "lat": 34.09059,
+      "lon": -111.46653,
+      "n": 15,
+      "small_n": true,
+      "reports": {
+        "total": 15,
+        "used": 15,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-13"
+        ]
+      },
+      "pct_dry": 33,
+      "mean_flow": 0.4133,
+      "annual_precip_in": 19.22,
+      "type": "Flashy (needs recent rain)",
+      "mean_flow_by_month": {
+        "4": 0.8,
+        "5": 0.4,
+        "6": 0.04,
+        "9": 0.1,
+        "10": 0.8,
+        "11": 1.0,
+        "12": 0.8
+      },
+      "correlations": [
+        {
+          "window": "180d",
+          "days": 180,
+          "raw_r": 0.7161,
+          "ctrl_r": 0.0935
+        },
+        {
+          "window": "90d",
+          "days": 90,
+          "raw_r": 0.7087,
+          "ctrl_r": 0.0683
+        },
+        {
+          "window": "60d",
+          "days": 60,
+          "raw_r": 0.6718,
+          "ctrl_r": 0.4029
+        },
+        {
+          "window": "30d",
+          "days": 30,
+          "raw_r": 0.6164,
+          "ctrl_r": 0.1367
+        },
+        {
+          "window": "365d",
+          "days": 365,
+          "raw_r": -0.2067,
+          "ctrl_r": -0.0755
+        },
+        {
+          "window": "270d",
+          "days": 270,
+          "raw_r": 0.1403,
+          "ctrl_r": 0.0036
+        }
+      ],
+      "best": {
+        "window": "60d",
+        "days": 60,
+        "r": 0.4545,
+        "own_ctrl_r": 0.4029,
+        "raw_r": 0.6718,
+        "borrowed": 0.6491,
+        "group_n": 3,
+        "signal_check": "partly seasonal, real signal remains"
+      },
+      "asof": "2026-07-13",
+      "precip_in": 0.863,
+      "predicted_flow": 0.12,
+      "verdict": "Marginal - pools/dripping at best",
+      "harmonics": 1
+    },
+    {
+      "name": "Chilson Spring",
+      "lat": 34.08587,
+      "lon": -111.49097,
+      "n": 58,
+      "small_n": false,
+      "reports": {
+        "total": 58,
+        "used": 58,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-13"
+        ]
+      },
+      "pct_dry": 3,
+      "mean_flow": 0.5,
+      "annual_precip_in": 19.22,
+      "type": "Reliable (groundwater-buffered)",
+      "mean_flow_by_month": {
+        "1": 0.45,
+        "2": 0.7429,
+        "3": 0.6727,
+        "4": 0.4,
+        "6": 0.2,
+        "8": 0.2,
+        "9": 0.4,
+        "10": 0.425,
+        "11": 0.5,
+        "12": 0.2
+      },
+      "correlations": [
+        {
+          "window": "90d",
+          "days": 90,
+          "raw_r": 0.5121,
+          "ctrl_r": 0.4566
+        },
+        {
+          "window": "60d",
+          "days": 60,
+          "raw_r": 0.4988,
+          "ctrl_r": 0.4188
+        },
+        {
+          "window": "30d",
+          "days": 30,
+          "raw_r": 0.4776,
+          "ctrl_r": 0.4413
+        },
+        {
+          "window": "270d",
+          "days": 270,
+          "raw_r": 0.4205,
+          "ctrl_r": 0.3494
+        },
+        {
+          "window": "180d",
+          "days": 180,
+          "raw_r": 0.4093,
+          "ctrl_r": 0.2665
+        },
+        {
+          "window": "365d",
+          "days": 365,
+          "raw_r": 0.1198,
+          "ctrl_r": 0.17
+        }
+      ],
+      "best": {
+        "window": "90d",
+        "days": 90,
+        "r": 0.4453,
+        "own_ctrl_r": 0.4566,
+        "raw_r": 0.5121,
+        "borrowed": 0.2424,
+        "group_n": 3,
+        "signal_check": "survives -> genuine rain response"
+      },
+      "asof": "2026-07-13",
+      "precip_in": 1.352,
+      "predicted_flow": 0.28,
+      "verdict": "Marginal - pools/dripping at best",
+      "harmonics": 1
+    }
+  ],
+  "notes": []
+}
