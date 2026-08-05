@@ -43,8 +43,38 @@ Pure Python standard library — no `pip install`. Precip comes from the free
 
 ## Embedding the engine (hosts)
 
-`forecast.py` is a module as well as a CLI. There are two seams, and between them
-a host should never need to reach for anything private.
+`forecast.py` is a module as well as a CLI. There are three seams, and between
+them a host should never need to reach for anything private — or reimplement
+anything.
+
+```python
+import io, forecast
+from datetime import date
+
+forecast.PRECIP_PROVIDER = my_provider                       # optional, see below
+sources = forecast.load_sources_from([io.StringIO(request_body)])
+payload = forecast.run(sources, date(2026, 8, 15))           # what --json prints
+```
+
+### Running the engine
+
+`run()` is `main()` minus argument parsing and output: the same three passes, the
+same skip and error handling, returning the same dict `--json` prints. Use it
+rather than calling `analyze_base()` / `pool_controlled()` / `finalize()` yourself
+— a copy of those passes silently drifts from the engine as it changes, and a
+service that did exactly that started returning 500s the first time the engine
+learned a new way to skip a source.
+
+```python
+payload = forecast.run(sources, asof, harmonics=1, pool=True,
+                       pool_radius_km=25.0, use_cache=True,
+                       notes=None, on_note=None)
+```
+
+`asof` defaults to today. `notes` may be a list to append to — pre-seed it with
+anything that went wrong earlier (a rejected upload, say) and it appears in the
+payload. `on_note` is called with each note as it happens, for logging or
+streaming. Sources that can't be analysed become notes; they never raise.
 
 ### Loading CSV that isn't on disk
 
@@ -111,7 +141,7 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-106 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+116 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for

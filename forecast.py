@@ -34,11 +34,13 @@ EMBEDDING IT (hosts):
     import forecast
     forecast.PRECIP_PROVIDER = my_provider   # (lat, lon, end_date, use_cache)
     sources = forecast.load_sources_from([io.StringIO(request_body)])
-    rows = [forecast.analyze(s, asof) for s in sources]
-  Two seams, and between them a host needs nothing private. PRECIP_PROVIDER
-  swaps the precip backend to a shared store (Postgres/KV) instead of this
-  script's .cache/ directory; load_sources_from() takes CSV that never touched
-  the filesystem. Still stdlib-only, still no change to the CLI.
+    payload = forecast.run(sources, asof)    # the same dict --json prints
+  Three seams, and between them a host needs nothing private and reimplements
+  nothing. load_sources_from() takes CSV that never touched the filesystem;
+  run() is main() minus the CLI, so a service gets the engine's real behaviour
+  instead of a copy that drifts; PRECIP_PROVIDER swaps the precip backend to a
+  shared store (Postgres/KV) instead of this script's .cache/ directory.
+  Still stdlib-only, still no change to the CLI.
 
 PIPING IT AROUND:
   * `-` as a filename reads the CSV from stdin (and stdin is used automatically
@@ -244,7 +246,10 @@ def open_meteo_provider(lat, lon, end_date, use_cache=True):
     cpath = _cache_path(lat, lon)
     if use_cache and os.path.exists(cpath):
         try:
-            cached = json.load(open(cpath))
+            # Closed explicitly: CPython's refcounting hides a leak here, but a
+            # long-lived host process would hold one handle per cached coordinate.
+            with open(cpath) as f:
+                cached = json.load(f)
             times = cached.get("daily", {}).get("time") or []
             if times and times[-1] >= end_date.isoformat():
                 return _trim_daily(cached, end_date)   # cache runs far enough
@@ -253,7 +258,8 @@ def open_meteo_provider(lat, lon, end_date, use_cache=True):
     with urllib.request.urlopen(_open_meteo_url(lat, lon, end_date), timeout=120) as r:
         data = json.load(r)
     os.makedirs(CACHE_DIR, exist_ok=True)
-    json.dump(data, open(cpath, "w"))
+    with open(cpath, "w") as f:
+        json.dump(data, f)
     return data
 
 PRECIP_PROVIDER = open_meteo_provider
@@ -762,6 +768,58 @@ def parse_args(argv):
         i += 1
     return files, opts
 
+# --------------------------------------------------------------------------- #
+# The three passes, with no CLI attached
+# ---------------------------------------------------------------------------
+# This is the engine's actual behaviour, and both entry points go through it, so
+# a host cannot end up running a copy that drifts. It drifted once: a service
+# reimplementing these passes kept checking `analyze_base(...) is None` after the
+# n == 0 case was added, and returned 500s on input the CLI handled fine.
+# --------------------------------------------------------------------------- #
+def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note):
+    """Pass 1 (per-source bases) -> pass 2 (pool) -> pass 3 (finalize). `note` is
+    called as note(kind, message, source_name) for anything skipped or failed."""
+    bases = []
+    for src in sources:
+        try:
+            b = analyze_base(src, asof, use_cache, n_harm)
+            if b is None or b["n"] == 0:
+                # Say WHY: "you gave me nothing" and "all your data predates my
+                # precipitation record" are very different problems for the author.
+                note("skip", excluded_note(b) if b else "no reports", src["name"])
+                continue
+            bases.append(b)
+        except Exception as e:
+            note("error", str(e), src["name"])
+    if pool and len(bases) > 1:                  # needs >=2 sources to borrow
+        pool_controlled(bases, radius_km)
+    return [finalize(b) for b in bases]
+
+def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
+        use_cache=True, notes=None, on_note=None):
+    """Run the engine over loaded sources and return the same dict --json prints.
+
+    This is what main() does minus argument parsing and output, so an embedding
+    host gets the engine's real behaviour -- including every future change to how
+    sources are skipped or classified -- rather than a copy of these passes:
+
+        sources = forecast.load_sources_from([io.StringIO(body)])
+        payload = forecast.run(sources, date(2026, 8, 15))
+
+    `asof` defaults to today. `notes` may be a list to append to (pre-seed it with
+    anything that went wrong before this point, e.g. a rejected input file, and it
+    will appear in the returned payload). `on_note` is called with each note dict
+    as it happens, for a caller that wants to log or stream them."""
+    asof = asof or date.today()
+    notes = notes if notes is not None else []
+    def note(kind, msg, name=None):
+        entry = {"kind": kind, "source": name, "message": msg}
+        notes.append(entry)
+        if on_note:
+            on_note(entry)
+    rows = _analyse(sources, asof, use_cache, harmonics, pool, pool_radius_km, note)
+    return run_json(rows, notes, asof, pool, pool_radius_km, harmonics, use_cache)
+
 def main(argv):
     try:
         files, opts = parse_args(argv)
@@ -791,24 +849,9 @@ def main(argv):
                       sys.stdout, indent=2)
             print()
         return 2
-    # Pass 1: per-source base (fetch precip + per-window r vectors), no window chosen yet.
-    bases = []
-    for src in sources:
-        try:
-            b = analyze_base(src, asof, use_cache, n_harm)
-            if b is None or b["n"] == 0:
-                # Say WHY: "you gave me nothing" and "all your data predates my
-                # precipitation record" are very different problems for the author.
-                note("skip", excluded_note(b) if b else "no reports", src["name"])
-                continue
-            bases.append(b)
-        except Exception as e:
-            note("error", str(e), src["name"])
-    # Pass 2: pool the season-controlled r across nearby sources (needs >=2 to borrow).
-    if do_pool and len(bases) > 1:
-        pool_controlled(bases, radius_km)
-    # Pass 3: finalize (best window / class / analog read off the pooled r) + report.
-    rows = [finalize(b) for b in bases]
+    # The analysis itself lives in _analyse(), shared with run(), so the CLI and an
+    # embedding host cannot answer differently for the same input.
+    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note)
     if as_json:
         json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache),
                   sys.stdout, indent=2)
