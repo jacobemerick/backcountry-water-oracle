@@ -62,7 +62,7 @@ TRUST IT THIS MUCH:
     turns it off. Only the correlation is pooled -- %-dry and the flow numbers
     stay each source's own.
 """
-import csv, json, math, os, sys, urllib.request
+import bisect, csv, json, math, os, sys, urllib.request
 from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -116,11 +116,37 @@ def load_sources(paths):
 # --------------------------------------------------------------------------- #
 # Precipitation (Open-Meteo ERA5 archive, cached per rounded coordinate)
 # --------------------------------------------------------------------------- #
+def _cache_path(lat, lon):
+    """One file per rounded coordinate. Deliberately NOT keyed on end_date: the
+    series is a prefix of itself, so a file fetched through a later date already
+    answers every earlier one. Keying on the end date meant a fresh ~19-year
+    download for every source on every new day."""
+    return os.path.join(CACHE_DIR, f"{round(lat,2)}_{round(lon,2)}.json")
+
+def _trim_daily(data, end_date):
+    """Cut a series down to end_date, so a cached series that runs longer gives
+    bit-identical results to one fetched for exactly this date."""
+    daily = data["daily"]
+    times = daily["time"]
+    iso = end_date.isoformat()
+    if not times or times[-1] <= iso:
+        return data
+    cut = bisect.bisect_right(times, iso)         # ISO dates sort chronologically
+    out = dict(data)
+    out["daily"] = dict(daily, time=times[:cut],
+                        precipitation_sum=daily["precipitation_sum"][:cut])
+    return out
+
 def fetch_precip(lat, lon, end_date, use_cache=True):
-    key = f"{round(lat,2)}_{round(lon,2)}_{end_date.isoformat()}.json"
-    cpath = os.path.join(CACHE_DIR, key)
+    cpath = _cache_path(lat, lon)
     if use_cache and os.path.exists(cpath):
-        return json.load(open(cpath))
+        try:
+            cached = json.load(open(cpath))
+            times = cached.get("daily", {}).get("time") or []
+            if times and times[-1] >= end_date.isoformat():
+                return _trim_daily(cached, end_date)   # cache runs far enough
+        except (ValueError, KeyError):
+            pass                                       # unreadable cache -> refetch
     url = ("https://archive-api.open-meteo.com/v1/archive"
            f"?latitude={lat:.4f}&longitude={lon:.4f}"
            f"&start_date={PRECIP_START}&end_date={end_date.isoformat()}"
