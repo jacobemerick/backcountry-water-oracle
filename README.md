@@ -111,7 +111,7 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-96 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+106 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
