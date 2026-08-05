@@ -79,6 +79,14 @@ WINDOWS = [30, 60, 90, 180, 270, 365]
 ERA5_LAG_DAYS = 6
 PRECIP_START = "2007-01-01"
 POOL_RADIUS_KM = 25.0   # default neighborhood radius for pooling (see pool_controlled)
+# How far two rows sharing a source name may sit apart before that is treated as a
+# name collision rather than GPS scatter (see _read_csv). Sub-kilometre differences
+# cannot change any number the engine produces -- ERA5's grid is ~9-11 km and the
+# precip cache rounds coordinates to 2dp (~1.1 km), so both rows resolve to the same
+# cell and the same cached series. Past that, it is likely two different sources
+# wearing the same name, and the engine would silently correlate one against the
+# other's weather.
+COORD_TOLERANCE_KM = 1.0
 
 # --------------------------------------------------------------------------- #
 # Input: normalized CSV -> sources
@@ -96,10 +104,24 @@ def _read_csv(f, label, sources):
         name = row["source"].strip()
         if not name:
             continue
-        s = sources.setdefault(name, {"name": name,
-                                      "lat": float(row["lat"]),
-                                      "lon": float(row["lon"]),
-                                      "reports": []})
+        lat, lon = float(row["lat"]), float(row["lon"])
+        s = sources.get(name)
+        if s is None:
+            s = sources[name] = {"name": name, "lat": lat, "lon": lon, "reports": []}
+        else:
+            # Rows sharing a name are one source, so the first row's coordinates used
+            # to win silently -- two different springs with the same name would get
+            # correlated against ONE of their weather records and look entirely
+            # normal. Close enough is still fine (GPS scatter); far apart is a bug in
+            # the data that only the author can resolve.
+            off_by = _haversine_km(s["lat"], s["lon"], lat, lon)
+            if off_by > COORD_TOLERANCE_KM:
+                raise ValueError(
+                    f"{label} line {reader.line_num}: source {name!r} has conflicting "
+                    f"coordinates -- ({s['lat']:.5f}, {s['lon']:.5f}) and "
+                    f"({lat:.5f}, {lon:.5f}), {off_by:,.1f} km apart. Rows sharing a "
+                    "name are treated as one source: rename one of them, or fix the "
+                    "coordinates.")
         sc = max(0.0, min(1.0, float(row["score"])))
         s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
 
