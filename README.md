@@ -39,6 +39,49 @@ python3 forecast.py area.csv --json                           # machine-readable
 Pure Python standard library — no `pip install`. Precip comes from the free
 [Open-Meteo ERA5 archive](https://open-meteo.com/) (no key), cached in `.cache/`.
 
+## Embedding the engine (hosts)
+
+`forecast.py` is a module as well as a CLI. The one seam a host usually needs is
+**where precipitation comes from** — this script caches it to a `.cache/`
+directory next to itself, which is wrong for a serverless app that wants the
+series in a shared store (and rude to Open-Meteo, since every cold invocation
+refetches). Assign your own provider:
+
+```python
+import forecast
+
+def my_provider(lat, lon, end_date, use_cache=True):
+    series = my_store.get(lat, lon)                       # Postgres, KV, S3, ...
+    if series is None or series["daily"]["time"][-1] < end_date.isoformat():
+        series = forecast.open_meteo_provider(lat, lon, end_date, use_cache)
+        my_store.put(lat, lon, series)                    # or fetch it your own way
+    return series
+
+forecast.PRECIP_PROVIDER = my_provider
+rows = [forecast.analyze(s, asof) for s in forecast.load_sources(["reports.csv"])]
+```
+
+The contract is one daily series per coordinate:
+
+```python
+provider(lat, lon, end_date, use_cache) -> {"daily": {
+    "time":              ["2007-01-01", ...],   # ascending ISO dates
+    "precipitation_sum": [0.0, ...],            # inches, same length; None reads as 0.0
+}}
+```
+
+- Returning **more** than `end_date` is fine — the engine trims, so you can keep
+  one long series per coordinate and serve every as-of date from it.
+- `use_cache=False` means the caller wants fresh data; bypass your cache.
+- A provider that returns the wrong shape fails at the seam with a message naming
+  it, rather than a `KeyError` from inside the stats code.
+- `forecast.CACHE_DIR` is assignable too, if you only want the built-in cache
+  somewhere else.
+
+No new dependency, no change to the CLI, and the engine stays sterile — it still
+only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backends
+(IEM PRISM/MRMS) will be providers on this same seam.
+
 ## The input contract (CSV schema)
 
 The engine understands exactly one thing:

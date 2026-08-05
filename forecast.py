@@ -30,6 +30,14 @@ Usage:
     cat area.csv | python3 forecast.py -                # read the CSV from stdin
     python3 forecast.py area.csv --json                 # machine-readable output
 
+EMBEDDING IT (hosts):
+    import forecast
+    forecast.PRECIP_PROVIDER = my_provider   # (lat, lon, end_date, use_cache)
+    rows = [forecast.analyze(s, asof) for s in forecast.load_sources(["x.csv"])]
+  The precip backend is the one seam a host needs: swap it to read the series
+  from a shared store (Postgres/KV) instead of this script's .cache/ directory.
+  Still stdlib-only, still no change to the CLI. See PRECIP_PROVIDER below.
+
 PIPING IT AROUND:
   * `-` as a filename reads the CSV from stdin (and stdin is used automatically
     when no files are given and stdin is not a terminal), so the engine drops
@@ -62,7 +70,7 @@ TRUST IT THIS MUCH:
     turns it off. Only the correlation is pooled -- %-dry and the flow numbers
     stay each source's own.
 """
-import csv, json, math, os, sys, urllib.request
+import bisect, csv, json, math, os, sys, urllib.request
 from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,23 +122,106 @@ def load_sources(paths):
     return list(sources.values())
 
 # --------------------------------------------------------------------------- #
-# Precipitation (Open-Meteo ERA5 archive, cached per rounded coordinate)
+# Precipitation: a swappable provider
+# ---------------------------------------------------------------------------
+# Everything downstream needs is one daily series per coordinate:
+#
+#     provider(lat, lon, end_date, use_cache) -> {"daily": {"time": [ISO...],
+#                                                 "precipitation_sum": [inches...]}}
+#
+# The default provider fetches Open-Meteo's ERA5 archive and caches it under
+# CACHE_DIR. An embedding host (a web app on serverless, say) that needs the
+# series in a shared store instead can assign its own callable:
+#
+#     import forecast
+#     forecast.PRECIP_PROVIDER = my_postgres_provider   # same signature
+#
+# ...and the engine will use it everywhere, with no new dependency and no change
+# to the CLI. A host that only wants different STORAGE can wrap the built-in:
+# call open_meteo_provider() on a miss and keep the result wherever it likes.
+# CACHE_DIR itself is assignable too, for the simple "just put it elsewhere" case.
+#
+# Contract notes:
+#   * `time` must be ascending ISO dates; `precipitation_sum` inches, same length.
+#     None is allowed and read as 0.0. The series should start at PRECIP_START --
+#     a short one silently shortens the analog pool it can draw on.
+#   * `end_date` is the latest day the caller needs. Returning MORE than that is
+#     fine (the engine trims), which lets a host keep one series per coordinate
+#     and serve every as-of date from it.
+#   * `use_cache=False` means "the caller wants fresh data" -- bypass your cache.
 # --------------------------------------------------------------------------- #
-def fetch_precip(lat, lon, end_date, use_cache=True):
-    key = f"{round(lat,2)}_{round(lon,2)}_{end_date.isoformat()}.json"
-    cpath = os.path.join(CACHE_DIR, key)
+def _open_meteo_url(lat, lon, end_date):
+    return ("https://archive-api.open-meteo.com/v1/archive"
+            f"?latitude={lat:.4f}&longitude={lon:.4f}"
+            f"&start_date={PRECIP_START}&end_date={end_date.isoformat()}"
+            "&daily=precipitation_sum&precipitation_unit=inch"
+            "&timezone=America%2FPhoenix")
+
+def _cache_path(lat, lon):
+    """One file per rounded coordinate. Deliberately NOT keyed on end_date: the
+    series is a prefix of itself, so a file fetched through a later date already
+    answers every earlier one. Keying on the end date meant a fresh ~19-year
+    download for every source on every new day."""
+    return os.path.join(CACHE_DIR, f"{round(lat,2)}_{round(lon,2)}.json")
+
+def _trim_daily(data, end_date):
+    """Cut a series down to end_date, so a cached series that runs longer gives
+    bit-identical results to one fetched for exactly this date."""
+    daily = data["daily"]
+    times = daily["time"]
+    iso = end_date.isoformat()
+    if not times or times[-1] <= iso:
+        return data
+    cut = bisect.bisect_right(times, iso)         # ISO dates sort chronologically
+    out = dict(data)
+    out["daily"] = dict(daily, time=times[:cut],
+                        precipitation_sum=daily["precipitation_sum"][:cut])
+    return out
+
+def open_meteo_provider(lat, lon, end_date, use_cache=True):
+    """Default provider: Open-Meteo ERA5 archive, cached per rounded coordinate."""
+    cpath = _cache_path(lat, lon)
     if use_cache and os.path.exists(cpath):
-        return json.load(open(cpath))
-    url = ("https://archive-api.open-meteo.com/v1/archive"
-           f"?latitude={lat:.4f}&longitude={lon:.4f}"
-           f"&start_date={PRECIP_START}&end_date={end_date.isoformat()}"
-           "&daily=precipitation_sum&precipitation_unit=inch"
-           "&timezone=America%2FPhoenix")
-    with urllib.request.urlopen(url, timeout=120) as r:
+        try:
+            cached = json.load(open(cpath))
+            times = cached.get("daily", {}).get("time") or []
+            if times and times[-1] >= end_date.isoformat():
+                return _trim_daily(cached, end_date)   # cache runs far enough
+        except (ValueError, KeyError):
+            pass                                       # unreadable cache -> refetch
+    with urllib.request.urlopen(_open_meteo_url(lat, lon, end_date), timeout=120) as r:
         data = json.load(r)
     os.makedirs(CACHE_DIR, exist_ok=True)
     json.dump(data, open(cpath, "w"))
     return data
+
+PRECIP_PROVIDER = open_meteo_provider
+
+def _check_daily(data, who):
+    """Fail loudly, at the seam, on a provider that returns the wrong shape --
+    otherwise a host debugs a KeyError from deep inside the stats code."""
+    try:
+        times = data["daily"]["time"]
+        vals = data["daily"]["precipitation_sum"]
+    except (TypeError, KeyError):
+        raise ValueError(f"{who} must return {{'daily': {{'time': [...], "
+                         f"'precipitation_sum': [...]}}}}, got {type(data).__name__}")
+    if len(times) != len(vals):
+        raise ValueError(f"{who} returned {len(times)} dates but {len(vals)} "
+                         "precipitation values")
+    if not times:
+        raise ValueError(f"{who} returned an empty series")
+    return data
+
+def fetch_precip(lat, lon, end_date, use_cache=True):
+    """Get the daily precip series from the active provider (see PRECIP_PROVIDER)."""
+    provider = PRECIP_PROVIDER
+    who = f"precip provider {getattr(provider, '__name__', provider)!r}"
+    data = _check_daily(provider(lat, lon, end_date, use_cache), who)
+    # Trim here too, not just in the built-in: a host is allowed to keep one long
+    # series per coordinate and hand back all of it, and the as-of read must not
+    # depend on how much extra it chose to return.
+    return _trim_daily(data, end_date)
 
 def build_precip_index(data):
     days = [date.fromisoformat(t) for t in data["daily"]["time"]]
