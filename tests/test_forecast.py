@@ -45,7 +45,8 @@ def load_fixture_series(lat, lon):
     key = (round(lat, 2), round(lon, 2))
     if key not in _series_cache:
         path = os.path.join(PRECIP_DIR, f"{key[0]}_{key[1]}.json")
-        raw = json.load(open(path))
+        with open(path) as f:
+            raw = json.load(f)
         start = date.fromisoformat(raw["start"])
         vals = raw["precip_in"]
         times = [(start + timedelta(days=i)).isoformat() for i in range(len(vals))]
@@ -613,7 +614,15 @@ class TestPooling(unittest.TestCase):
             self.assertLess(b, 1.0)
 
     def test_pool_controlled_is_order_independent(self):
-        """It must read each source's own `ctrl`, never a neighbour's pooled result."""
+        """It must read each source's own `ctrl`, never a neighbour's pooled result.
+
+        Compared to a tolerance, not exactly: reversing the list reverses the order
+        the weighted sums accumulate in, and floating-point addition is not
+        associative, so the last bit legitimately moves (this failed on Python
+        3.9-3.11 asserting equality, and passed on 3.12+, which is a good sign it
+        was the assertion at fault rather than the engine). Genuine order
+        dependence -- pooling that reads a neighbour's already-pooled value --
+        moves the result far more than this, and is still caught."""
         def bases():
             return [{"name": n, "lat": la, "lon": lo, "n": nn,
                      "ctrl": {f"{w}d": r for w in forecast.WINDOWS},
@@ -628,7 +637,12 @@ class TestPooling(unittest.TestCase):
         forecast.pool_controlled(rev, forecast.POOL_RADIUS_KM)
         rev_by_name = {b["name"]: b for b in rev}
         for b in fwd:
-            self.assertEqual(b["pooled_ctrl"], rev_by_name[b["name"]]["pooled_ctrl"])
+            other = rev_by_name[b["name"]]
+            self.assertEqual(sorted(b["pooled_ctrl"]), sorted(other["pooled_ctrl"]))
+            for w, r in b["pooled_ctrl"].items():
+                self.assertAlmostEqual(r, other["pooled_ctrl"][w], places=12,
+                                       msg=f"{b['name']} {w} depends on processing order")
+                self.assertAlmostEqual(b["borrowed"][w], other["borrowed"][w], places=12)
 
     def test_sources_outside_the_radius_are_not_neighbours(self):
         far = [{"name": "A", "lat": 34.0, "lon": -111.0, "n": 20,
@@ -911,7 +925,8 @@ class TestGolden(OfflineTestCase):
     def test_matches_the_recorded_payload(self):
         _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
         got = json.loads(out)
-        want = json.load(open(self.GOLDEN))
+        with open(self.GOLDEN) as f:
+            want = json.load(f)
         self.assertEqual(got["params"], want["params"])
         self.assertEqual(got["asof"], want["asof"])
         self.assertEqual(len(got["sources"]), len(want["sources"]))
