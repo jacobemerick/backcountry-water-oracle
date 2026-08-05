@@ -33,6 +33,8 @@ python3 forecast.py sources.csv --asof 2026-08-15            # read for a future
 python3 forecast.py sources.csv --no-cache                    # force precip re-fetch
 python3 forecast.py area.csv --pool-radius 15                 # neighbor radius km (pooling)
 python3 forecast.py area.csv --no-pool                        # analyze each source alone
+cat area.csv | python3 forecast.py -                          # read the CSV from stdin
+python3 forecast.py area.csv --json                           # machine-readable output
 ```
 Pure Python standard library — no `pip install`. Precip comes from the free
 [Open-Meteo ERA5 archive](https://open-meteo.com/) (no key), cached in `.cache/`.
@@ -58,6 +60,55 @@ Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,"Dry"
 Anything that can emit this CSV can drive the engine. The mapping from real-world
 report language to a `score` lives in the **skill's rubric** (see
 `.claude/skills/water-forecast/SKILL.md`), not in the engine.
+
+## Piping it around (`-` and `--json`)
+
+The engine reads stdin and writes JSON, so it drops into a pipeline between your
+own normalizer and your own consumer:
+
+```bash
+my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
+```
+
+- **`-` as a filename reads the CSV from stdin.** It mixes freely with real
+  paths (`forecast.py known.csv - --json`), and stdin is used automatically when
+  no files are given and stdin isn't a terminal — so a bare `... | forecast.py`
+  works too. (stdin is consumed once; a repeated `-` is ignored.)
+- **`--json` prints one JSON object on stdout** instead of the text report, with
+  every number the text report shows. Diagnostics (`[skip]`/`[error]`) move to
+  **stderr** and are also collected under `notes`, so stdout stays valid JSON
+  even when a source fails. Exit code is unchanged (`2` on a bad CSV).
+
+```jsonc
+{
+  "asof": "2026-07-13",
+  "params": { "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
+              "cache": true, "windows": [30, 60, 90, 180, 270, 365] },
+  "sources": [{
+    "name": "Castersen Seep", "lat": 34.09059, "lon": -111.46653,
+    "n": 15, "small_n": true, "pct_dry": 33, "mean_flow": 0.4133,
+    "annual_precip_in": 19.22, "type": "Flashy (needs recent rain)",
+    "mean_flow_by_month": { "4": 0.8, "5": 0.4, "...": 0 },
+    "correlations": [ { "window": "180d", "days": 180,
+                        "raw_r": 0.7161, "ctrl_r": 0.0935 } ],   // own numbers
+    "best": { "window": "60d", "days": 60,
+              "r": 0.4545,            // POOLED season-controlled r — drives the verdict
+              "own_ctrl_r": 0.4029,   // this source alone
+              "raw_r": 0.6718,        // before season control
+              "borrowed": 0.6491, "group_n": 3,
+              "signal_check": "partly seasonal, real signal remains" },
+    "asof": "2026-07-13", "precip_in": 0.863,
+    "predicted_flow": 0.12, "verdict": "Marginal - pools/dripping at best",
+    "harmonics": 1
+  }],
+  "notes": []   // [{kind: "skip"|"error", source, message}, ...]
+}
+```
+
+Sources come back in input order (the text summary's "most reliable first" sort
+is a presentation choice — sort client-side on `pct_dry` if you want it). Both
+the pooled and un-pooled correlations are exposed, so a consumer can re-derive or
+second-guess the headline without re-running the engine.
 
 ## How to read the output
 
@@ -126,6 +177,7 @@ its neighbors and gets rescued onto the rain window they validate, while buffere
       (`--pool-radius`), data-driven empirical-Bayes shrinkage. `--no-pool` to disable.
 - [x] **Season control** (day-of-year, annual harmonics) — reports a
       season-controlled r beside raw; classification keys off it. `--harmonics=N`.
+- [x] **JSON output & stdin** (`--json`, `-`) so the engine composes in a pipeline.
 - [ ] **Higher-res precip** option (PRISM / Daymet, or radar QPE for monsoon).
 - [ ] **Log-your-own-visits** so each source sharpens over time.
 - [ ] **Table export** (Markdown/HTML) for trip notes.
