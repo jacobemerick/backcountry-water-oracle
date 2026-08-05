@@ -85,7 +85,7 @@ holding a request body has neither of. Use `load_sources_from()`:
 import io, forecast
 
 sources = forecast.load_sources_from([io.StringIO(request_body)], labels=["<request>"])
-rows = [forecast.analyze(s, asof) for s in sources]
+payload = forecast.run(sources, asof)
 ```
 
 It takes already-open **text** streams — anything `csv.DictReader` can read — and
@@ -111,7 +111,7 @@ def my_provider(lat, lon, end_date, use_cache=True):
     return series
 
 forecast.PRECIP_PROVIDER = my_provider
-rows = [forecast.analyze(s, asof) for s in forecast.load_sources(["reports.csv"])]
+payload = forecast.run(forecast.load_sources(["reports.csv"]), asof)
 ```
 
 The contract is one daily series per coordinate:
