@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: py${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Report every broken combination, not just the first one to fall over.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          # One macOS job: it's the platform the tool is actually developed on.
+          - os: macos-latest
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # No install step, and there shouldn't ever be one: the engine and the
+      # suite are both stdlib-only by rule. If this file ever grows a `pip
+      # install`, something has gone wrong upstream of it.
+      - name: Run the suite
+        run: python3 tests/test_forecast.py
+
+      # The suite replaces urlopen with something that raises, so it cannot
+      # reach the network by accident. This makes that guarantee visible at the
+      # CI level too: a run that somehow needs the network fails here rather
+      # than flaking against a free weather service.
+      - name: Confirm the suite declares itself offline
+        run: |
+          grep -q "test attempted a network call" tests/test_forecast.py
