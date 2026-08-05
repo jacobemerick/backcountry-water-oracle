@@ -94,9 +94,9 @@ Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,"Dry"
 
 | column | meaning |
 |--------|---------|
-| `source` | name/id; rows sharing a name are one source |
+| `source` | name/id; rows sharing a name are one source — and must agree on coordinates to within ~1 km, or the engine errors out rather than pick one (two different "Cottonwood Spring"s need two names) |
 | `lat`,`lon` | decimal degrees |
-| `date` | ISO `YYYY-MM-DD` |
+| `date` | ISO `YYYY-MM-DD` — reports outside the precip record (from 2007) can't be correlated and are excluded, reported as `reports.excluded_*` |
 | `score` | **float 0.0–1.0** — `0.0` = dry, `1.0` = max flow |
 | `status` | *(optional)* raw text, kept for provenance only |
 
@@ -130,6 +130,11 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
   "sources": [{
     "name": "Castersen Seep", "lat": 34.09059, "lon": -111.46653,
     "n": 15, "small_n": true, "pct_dry": 33, "mean_flow": 0.4133,
+    // `n` is what the analysis used; `reports` says what came in and what was
+    // dropped for falling outside the precip record ("12 reports, 9 usable")
+    "reports": { "total": 15, "used": 15, "excluded_before_precip": 0,
+                 "excluded_after_precip": 0,
+                 "precip_span": ["2007-01-01", "2026-07-13"] },
     "annual_precip_in": 19.22, "type": "Flashy (needs recent rain)",
     "mean_flow_by_month": { "4": 0.8, "5": 0.4, "...": 0 },
     "correlations": [ { "window": "180d", "days": 180,

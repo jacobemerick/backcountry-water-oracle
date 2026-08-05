@@ -27,11 +27,22 @@ a new input format — adapt the input to the schema instead.
    expected and good (see "Multiple sources" below).
 
 2. **Extract, per source:**
-   - `source` — a name/id (dedupe: same real source = same name across rows)
+   - `source` — a name/id (dedupe: same real source = same name across rows).
+     **Two different sources must not share a name.** Trail names repeat
+     constantly ("Cottonwood Spring" is everywhere); if you're merging reports
+     from different areas, qualify them (`Cottonwood Spring (Mazatzal)`). The
+     engine rejects a name whose rows disagree on position by more than ~1 km
+     rather than silently correlating one spring against the other's weather —
+     if you see that error, you merged two sources.
    - `lat`, `lon` — decimal degrees. Convert if given as DMS
      (e.g. `N34 05.142 W111 29.449` → 34.0857, -111.4908). If coordinates are
      truly absent, ask the user for them — the engine cannot run without them.
+     Small disagreements between reporters (GPS scatter) are fine; just be
+     consistent per source.
    - one row per dated observation: `date` (ISO) + a `score` (see rubric).
+     **Reports before 2007 can't be used** — the precipitation record starts
+     there. Include them anyway; the engine counts them rather than dropping
+     them silently, and that count is worth relaying (see step 7).
 
 3. **Score each observation 0.0–1.0** (0.0 = bone dry, 1.0 = max flow). Use your
    judgment on free text; the rubric below anchors it. Preserve the original
@@ -72,11 +83,17 @@ a new input format — adapt the input to the schema instead.
    | how much is borrowed | `best.borrowed` (× 100 = %), `best.group_n` |
    | is the signal real | `best.signal_check`, `best.raw_r` vs `best.own_ctrl_r` |
    | how shaky | `small_n` (true = < 25 reports — flag it out loud) |
+   | how much data was usable | `reports.total` vs `reports.used` |
 
    Two honesty rules: if `best.borrowed` is high (say > 0.5), **state that the
    read leans on neighbors** rather than the source's own record. And if
    `best.raw_r` is much larger than `best.own_ctrl_r`, say the raw correlation was
    mostly seasonal — that gap is the whole point of season control.
+
+   A third: when `reports.used < reports.total`, **say so** — "12 reports, 9
+   usable; three predate the precipitation record (2007)". The user gave you
+   those reports and will otherwise wonder why `n` shrank. If a source is skipped
+   entirely it lands in `notes` with the same explanation.
 
    Always relay the ERA5/monsoon caveat for any summer (Jun–Sep AZ) go/no-go: the
    model is the base rate, not "this week" — cross-check radar (MRMS via IEM, or
