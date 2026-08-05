@@ -30,8 +30,8 @@ from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
-import forecast                                                      # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "src"))
+import backcountry_water_oracle as forecast                          # noqa: E402
 
 IEM_CACHE = os.path.join(forecast.CACHE_DIR, "iem")
 PRODUCTS = ("ERA5", "PRISM", "MRMS")

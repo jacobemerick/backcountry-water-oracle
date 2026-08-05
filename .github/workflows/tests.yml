@@ -48,3 +48,55 @@ jobs:
       - name: Confirm the suite declares itself offline
         run: |
           grep -q "test attempted a network call" tests/test_forecast.py
+
+  # "It installs" is its own claim, and the one most likely to break silently:
+  # the suite runs from a source checkout and would never notice a broken wheel,
+  # a missing entry point, or a package that cannot find its own cache once it
+  # lives in site-packages.
+  package:
+    name: build + install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Build the wheel and sdist
+        run: |
+          python3 -m pip install --upgrade build
+          python3 -m build
+
+      - name: Install the wheel into a clean venv
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+
+      - name: The console script exists and reports its version
+        run: /tmp/venv/bin/water-forecast --version
+
+      - name: It runs from outside the checkout, on its own cache
+        working-directory: /tmp
+        run: |
+          /tmp/venv/bin/water-forecast \
+            "$GITHUB_WORKSPACE/examples/mazatzal-wilderness.csv" \
+            --asof 2026-07-13 --json > /tmp/out.json
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/out.json'))
+          assert len(d['sources']) == 3, d
+          assert d['params']['engine_version'], d['params']
+          print('ok:', d['params']['engine_version'], [s['name'][:20] for s in d['sources']])
+          "
+
+      - name: The wheel carries the engine and nothing else
+        run: |
+          python3 - <<'EOF'
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          payload = [n for n in names if not n.split("/")[0].endswith(".dist-info")]
+          assert payload == ["backcountry_water_oracle/__init__.py"], payload
+          assert not any("fixtures" in n for n in names), "fixtures leaked into the wheel"
+          print("wheel payload:", payload)
+          EOF

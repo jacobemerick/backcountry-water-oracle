@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backcountry-water-oracle"
+dynamic = ["version"]                     # read from the module, see below
+description = "Estimate whether a backcountry water source will be running, from its field reports plus precipitation."
+readme = "README.md"
+requires-python = ">=3.9"                 # what CI actually proves
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jacob Emerick", email = "jpemeric@gmail.com" }]
+keywords = ["hiking", "backpacking", "water", "hydrology", "precipitation", "forecast"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Hydrology",
+]
+
+# Deliberately empty, and it should stay that way: the engine is stdlib-only by
+# rule, and this file exists to make it installable, not to open a door.
+dependencies = []
+
+[project.scripts]
+water-forecast = "backcountry_water_oracle:cli"
+
+[project.urls]
+Homepage = "https://github.com/jacobemerick/backcountry-water-oracle"
+Issues = "https://github.com/jacobemerick/backcountry-water-oracle/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "backcountry_water_oracle.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The wheel is the engine only. Tests and their ~94 KB of ERA5 fixtures, the
+# research tools, and the worked example ship in the sdist (so a source checkout
+# can run the suite) but have no business in site-packages.
+[tool.setuptools]
+include-package-data = false
