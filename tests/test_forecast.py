@@ -233,6 +233,80 @@ class TestCoordinateConflicts(unittest.TestCase):
         self.assertEqual(len(forecast.load_sources([p])), 2)
 
 
+class TestLoadSourcesFrom(unittest.TestCase):
+    """Issue #24: the supported way to load CSV that never touched the filesystem.
+
+    The site previously called the private _read_csv() and had to remember the
+    reports.sort() itself -- a path nothing here covered, so a refactor could have
+    broken it with every test still green."""
+    CSV = ("source,lat,lon,date,score\n"
+           "S,34.09,-111.47,2024-06-01,0.5\n"
+           "S,34.09,-111.47,2024-01-01,1.0\n")
+
+    def test_loads_from_a_stream(self):
+        srcs = forecast.load_sources_from([io.StringIO(self.CSV)])
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+    def test_reports_come_back_sorted(self):
+        """The promise the caller used to owe. The fixture is deliberately out of
+        order, so an unsorted result fails here rather than silently skewing a
+        window sum somewhere downstream."""
+        srcs = forecast.load_sources_from([io.StringIO(self.CSV)])
+        dates = [d for d, _ in srcs[0]["reports"]]
+        self.assertEqual(dates, sorted(dates))
+        self.assertEqual(dates[0], date(2024, 1, 1))
+
+    def test_several_streams_merge(self):
+        a = io.StringIO(self.CSV)
+        b = io.StringIO("source,lat,lon,date,score\nT,34.09,-111.45,2024-03-01,0.2\n")
+        srcs = forecast.load_sources_from([a, b])
+        self.assertEqual(sorted(s["name"] for s in srcs), ["S", "T"])
+
+    def test_labels_name_the_stream_in_errors(self):
+        bad = io.StringIO("a,b\n1,2\n")
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([bad], labels=["<request body>"])
+        self.assertIn("<request body>", str(cm.exception))
+
+    def test_unlabelled_streams_get_a_usable_default(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO(self.CSV), io.StringIO("a,b\n1,2\n")])
+        self.assertIn("<stream 2>", str(cm.exception))
+
+    def test_a_single_label_may_be_a_bare_string(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO("a,b\n")], labels="<body>")
+        self.assertIn("<body>", str(cm.exception))
+
+    def test_a_bare_stream_is_not_mistaken_for_a_list_of_streams(self):
+        """Iterating a stream yields LINES; without the guard each line would be
+        treated as its own CSV and the failure would be baffling."""
+        srcs = forecast.load_sources_from(io.StringIO(self.CSV))
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+    def test_same_validation_as_the_file_path(self):
+        for bad, expect in [("a,b\n1,2\n", "missing column"), ("", "empty input")]:
+            with self.assertRaises(ValueError) as cm:
+                forecast.load_sources_from([io.StringIO(bad)])
+            self.assertIn(expect, str(cm.exception))
+
+    def test_coordinate_conflicts_are_caught_here_too(self):
+        conflict = ("source,lat,lon,date,score\n"
+                    "D,34.0,-111.0,2024-01-01,0.5\nD,44.0,-121.0,2024-02-01,0.2\n")
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO(conflict)])
+        self.assertIn("conflicting coordinates", str(cm.exception))
+
+    def test_matches_load_sources_exactly(self):
+        """One code path, so the two entry points cannot drift apart."""
+        from_file = forecast.load_sources([EXAMPLE_CSV])
+        with open(EXAMPLE_CSV) as f:
+            from_stream = forecast.load_sources_from([f])
+        self.assertEqual(from_stream, from_file)
+
+
 class TestStdin(unittest.TestCase):
     """Issue #5: `-` reads the CSV from stdin."""
     CSV = ("source,lat,lon,date,score\n"

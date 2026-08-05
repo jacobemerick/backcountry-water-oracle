@@ -43,11 +43,32 @@ Pure Python standard library — no `pip install`. Precip comes from the free
 
 ## Embedding the engine (hosts)
 
-`forecast.py` is a module as well as a CLI. The one seam a host usually needs is
-**where precipitation comes from** — this script caches it to a `.cache/`
-directory next to itself, which is wrong for a serverless app that wants the
-series in a shared store (and rude to Open-Meteo, since every cold invocation
-refetches). Assign your own provider:
+`forecast.py` is a module as well as a CLI. There are two seams, and between them
+a host should never need to reach for anything private.
+
+### Loading CSV that isn't on disk
+
+`load_sources()` takes file paths (or `-` for stdin), which an HTTP service
+holding a request body has neither of. Use `load_sources_from()`:
+
+```python
+import io, forecast
+
+sources = forecast.load_sources_from([io.StringIO(request_body)], labels=["<request>"])
+rows = [forecast.analyze(s, asof) for s in sources]
+```
+
+It takes already-open **text** streams — anything `csv.DictReader` can read — and
+`labels` name them in error messages the way filenames do, so "CSV missing
+column(s)" says *which* input was wrong. Reports come back sorted; the caller owes
+nothing. `load_sources()` is implemented on top of it, so both paths are the same
+code.
+
+### Where precipitation comes from
+
+This script caches precip to a `.cache/` directory next to itself, which is wrong
+for a serverless app that wants the series in a shared store (and rude to
+Open-Meteo, since every cold invocation refetches). Assign your own provider:
 
 ```python
 import forecast

@@ -33,10 +33,12 @@ Usage:
 EMBEDDING IT (hosts):
     import forecast
     forecast.PRECIP_PROVIDER = my_provider   # (lat, lon, end_date, use_cache)
-    rows = [forecast.analyze(s, asof) for s in forecast.load_sources(["x.csv"])]
-  The precip backend is the one seam a host needs: swap it to read the series
-  from a shared store (Postgres/KV) instead of this script's .cache/ directory.
-  Still stdlib-only, still no change to the CLI. See PRECIP_PROVIDER below.
+    sources = forecast.load_sources_from([io.StringIO(request_body)])
+    rows = [forecast.analyze(s, asof) for s in sources]
+  Two seams, and between them a host needs nothing private. PRECIP_PROVIDER
+  swaps the precip backend to a shared store (Postgres/KV) instead of this
+  script's .cache/ directory; load_sources_from() takes CSV that never touched
+  the filesystem. Still stdlib-only, still no change to the CLI.
 
 PIPING IT AROUND:
   * `-` as a filename reads the CSV from stdin (and stdin is used automatically
@@ -125,23 +127,60 @@ def _read_csv(f, label, sources):
         sc = max(0.0, min(1.0, float(row["score"])))
         s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
 
-def load_sources(paths):
-    """Return list of {name, lat, lon, reports=[(date, score)]}.
-    A path of "-" means stdin, so the engine can sit in a pipeline; stdin can only
-    be consumed once, so a repeated "-" is ignored after the first."""
-    sources, stdin_done = {}, False
-    for p in paths:
-        if p == "-":
-            if stdin_done:
-                continue
-            stdin_done = True
-            _read_csv(sys.stdin, "<stdin>", sources)
-        else:
-            with open(p, newline="", encoding="utf-8") as f:
-                _read_csv(f, p, sources)
+def _load(labelled_streams):
+    """The one loading path: consume (stream, label) pairs into finished sources.
+    Sorting the reports happens HERE rather than in each caller -- it is a promise
+    the loader makes, not a chore it hands back."""
+    sources = {}
+    for stream, label in labelled_streams:
+        _read_csv(stream, label, sources)
     for s in sources.values():
         s["reports"].sort()
     return list(sources.values())
+
+def load_sources_from(streams, labels=None):
+    """Return list of {name, lat, lon, reports=[(date, score)]} from already-open
+    TEXT streams -- anything csv.DictReader can read, e.g. io.StringIO.
+
+    This is the entry point for an embedding host holding CSV it never wrote to
+    disk (an HTTP request body, a database column, an S3 object):
+
+        sources = forecast.load_sources_from([io.StringIO(request_body)])
+
+    `labels` name the streams in error messages, the way filenames do for
+    load_sources; a stream with no label is called "<stream N>". Pass something a
+    user will recognise -- the label is what turns "CSV missing column(s)" into a
+    message that says WHICH input was wrong.
+
+    Reports come back sorted, same as load_sources: callers owe nothing."""
+    if hasattr(streams, "read"):        # a bare stream, not a list of them --
+        streams = [streams]             # iterating it would read one LINE per "stream"
+    if isinstance(labels, str):
+        labels = [labels]
+    labels = list(labels) if labels is not None else []
+    return _load((s, labels[i] if i < len(labels) else f"<stream {i + 1}>")
+                 for i, s in enumerate(streams))
+
+def load_sources(paths):
+    """Return list of {name, lat, lon, reports=[(date, score)]} from file paths.
+    A path of "-" means stdin, so the engine can sit in a pipeline; stdin can only
+    be consumed once, so a repeated "-" is ignored after the first.
+
+    Hosts working from memory rather than the filesystem want load_sources_from()."""
+    def opened():
+        stdin_done = False
+        for p in paths:
+            if p == "-":
+                if stdin_done:
+                    continue
+                stdin_done = True
+                yield sys.stdin, "<stdin>"
+            else:
+                # The consumer reads the file before this generator resumes, so the
+                # `with` still closes each one immediately after it is consumed.
+                with open(p, newline="", encoding="utf-8") as f:
+                    yield f, p
+    return _load(opened())
 
 # --------------------------------------------------------------------------- #
 # Precipitation: a swappable provider
