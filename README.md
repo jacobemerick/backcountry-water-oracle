@@ -1,5 +1,7 @@
 # backcountry-water-oracle
 
+[![tests](https://github.com/jacobemerick/backcountry-water-oracle/actions/workflows/tests.yml/badge.svg)](https://github.com/jacobemerick/backcountry-water-oracle/actions/workflows/tests.yml)
+
 Will that seep be running? This tool correlates a backcountry water source's
 historical **field reports** against ~19 years of daily precipitation for its
 coordinates, and gives a rough read on whether it's likely to have water — plus
@@ -88,14 +90,19 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-No dependencies, no config, **no network**, ~1 second. Precipitation comes from a
-committed fixture through `PRECIP_PROVIDER`, and every test that reads an as-of
-date passes one explicitly, so nothing depends on today's date or on ERA5 not
-being revised. A golden test compares the entire `--json` payload for the worked
-example, which is what catches silent numeric drift — the failure mode you can't
-eyeball in a tool whose wrong answers look as plausible as its right ones. See
-[`tests/README.md`](tests/README.md), especially before regenerating that golden
-file.
+96 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
+reads an as-of date passes one explicitly, so nothing depends on today's date or
+on ERA5 not being revised. A golden test compares the entire `--json` payload for
+the worked example, which is what catches silent numeric drift — the failure mode
+you can't eyeball in a tool whose wrong answers look as plausible as its right
+ones. See [`tests/README.md`](tests/README.md), especially before regenerating
+that golden file.
+
+**CI** runs the suite on every push and pull request, across Python 3.9–3.14 on
+Linux plus macOS on 3.14 (the platform and version this is developed on). There
+is no install step and there shouldn't ever be one — the engine and the suite are
+both stdlib-only by rule.
 
 ## The input contract (CSV schema)
 
@@ -245,6 +252,8 @@ Shipped:
 - [x] **JSON output & stdin** (`--json`, `-`) so the engine composes in a pipeline.
 - [x] **Injectable precip provider** so an embedding host can supply its own backend
       or shared cache — see [Embedding the engine](#embedding-the-engine-hosts).
+- [x] **Test suite + CI** ([#15]) — stdlib, offline, deterministic; run on every
+      push and PR across Python 3.9–3.14. See [Tests](#tests).
 
 Planned — the issue is where the detail and the open questions live:
 
@@ -256,7 +265,6 @@ Planned — the issue is where the detail and the open questions live:
       climatology, for a source with no field reports at all ([#8]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
       given ERA5 reaches 1940 ([#21]).
-- [ ] **Test suite** — stdlib, offline, deterministic ([#15]).
 
 [#8]: https://github.com/jacobemerick/backcountry-water-oracle/issues/8
 [#15]: https://github.com/jacobemerick/backcountry-water-oracle/issues/15
