@@ -17,11 +17,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        # 3.14 is the version this is actually developed and run on, so it is the
+        # one that matters most. 3.9 is past end-of-life and kept only because
+        # the engine is stdlib-only and there is no reason to break it -- drop it
+        # the moment it costs anything.
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
-          # One macOS job: it's the platform the tool is actually developed on.
+          # One macOS job, on the dev version: that pairing is the machine this
+          # tool is written on, so a failure there is a failure I'd hit first.
           - os: macos-latest
-            python-version: "3.13"
+            python-version: "3.14"
 
     steps:
       - uses: actions/checkout@v4
