@@ -57,10 +57,10 @@ a new input format — adapt the input to the schema instead.
    ```bash
    python3 forecast.py /tmp/water-forecast.csv --json
    ```
-   Add `--asof YYYY-MM-DD` if the user named a future trip date. Run it from the
-   repo root so it finds its cache. **Read the JSON — never parse the text
-   report**; the JSON carries the same numbers in labeled fields, so you can't
-   misread a column. (You can also pipe the CSV straight in with `-` instead of a
+   Add `--asof YYYY-MM-DD` if the user named a future trip date. The precip cache
+   follows the engine rather than the working directory, so it doesn't matter
+   where you run it from. **Read the JSON — never parse the text report**; the
+   JSON carries the same numbers in labeled fields, so you can't misread a column. (You can also pipe the CSV straight in with `-` instead of a
    temp file — `... | python3 forecast.py - --json` — but a temp file is worth
    keeping: the user can rerun and tweak it.)
 

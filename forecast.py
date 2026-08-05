@@ -78,7 +78,33 @@ import bisect, csv, json, math, os, sys, urllib.request
 from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE_DIR = os.path.join(HERE, ".cache")
+
+def _default_cache_dir():
+    """Where to keep downloaded precipitation.
+
+    This used to be unconditionally `.cache/` beside this file, which is right for
+    a script you run out of a checkout and wrong the moment the engine is
+    installed: it would write into site-packages, and simply fail where that is
+    read-only (containers, serverless bundles, a system install).
+
+    Order: an explicit WATER_ORACLE_CACHE; else a `.cache/` that already sits
+    beside this file, so an existing checkout keeps its downloads rather than
+    re-fetching ~19 years per coordinate; else the platform's user cache."""
+    env = os.environ.get("WATER_ORACLE_CACHE")
+    if env:
+        return env
+    beside = os.path.join(HERE, ".cache")
+    if os.path.isdir(beside) and os.access(beside, os.W_OK):
+        return beside
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Caches")
+    elif sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.join(base, "backcountry-water-oracle")
+
+CACHE_DIR = _default_cache_dir()      # assignable; a host may point it anywhere
 WINDOWS = [30, 60, 90, 180, 270, 365]
 ERA5_LAG_DAYS = 6
 PRECIP_START = "2007-01-01"

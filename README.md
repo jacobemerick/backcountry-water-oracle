@@ -39,7 +39,11 @@ cat area.csv | python3 forecast.py -                          # read the CSV fro
 python3 forecast.py area.csv --json                           # machine-readable output
 ```
 Pure Python standard library — no `pip install`. Precip comes from the free
-[Open-Meteo ERA5 archive](https://open-meteo.com/) (no key), cached in `.cache/`.
+[Open-Meteo ERA5 archive](https://open-meteo.com/) (no key). It's cached in
+`.cache/` beside the engine when you're working in a checkout, and otherwise in
+your platform's user cache directory (`~/Library/Caches/backcountry-water-oracle`,
+`~/.cache/...`, `%LOCALAPPDATA%\...`). Set `WATER_ORACLE_CACHE` to override, or
+assign `forecast.CACHE_DIR` if you're embedding.
 
 ## Embedding the engine (hosts)
 
@@ -129,7 +133,8 @@ provider(lat, lon, end_date, use_cache) -> {"daily": {
 - A provider that returns the wrong shape fails at the seam with a message naming
   it, rather than a `KeyError` from inside the stats code.
 - `forecast.CACHE_DIR` is assignable too, if you only want the built-in cache
-  somewhere else.
+  somewhere else — it defaults to your platform's user cache directory, never to
+  wherever the module happens to be installed.
 
 No new dependency, no change to the CLI, and the engine stays sterile — it still
 only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backends
@@ -141,7 +146,7 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-116 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+124 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
