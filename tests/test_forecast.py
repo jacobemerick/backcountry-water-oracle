@@ -233,6 +233,80 @@ class TestCoordinateConflicts(unittest.TestCase):
         self.assertEqual(len(forecast.load_sources([p])), 2)
 
 
+class TestLoadSourcesFrom(unittest.TestCase):
+    """Issue #24: the supported way to load CSV that never touched the filesystem.
+
+    The site previously called the private _read_csv() and had to remember the
+    reports.sort() itself -- a path nothing here covered, so a refactor could have
+    broken it with every test still green."""
+    CSV = ("source,lat,lon,date,score\n"
+           "S,34.09,-111.47,2024-06-01,0.5\n"
+           "S,34.09,-111.47,2024-01-01,1.0\n")
+
+    def test_loads_from_a_stream(self):
+        srcs = forecast.load_sources_from([io.StringIO(self.CSV)])
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+    def test_reports_come_back_sorted(self):
+        """The promise the caller used to owe. The fixture is deliberately out of
+        order, so an unsorted result fails here rather than silently skewing a
+        window sum somewhere downstream."""
+        srcs = forecast.load_sources_from([io.StringIO(self.CSV)])
+        dates = [d for d, _ in srcs[0]["reports"]]
+        self.assertEqual(dates, sorted(dates))
+        self.assertEqual(dates[0], date(2024, 1, 1))
+
+    def test_several_streams_merge(self):
+        a = io.StringIO(self.CSV)
+        b = io.StringIO("source,lat,lon,date,score\nT,34.09,-111.45,2024-03-01,0.2\n")
+        srcs = forecast.load_sources_from([a, b])
+        self.assertEqual(sorted(s["name"] for s in srcs), ["S", "T"])
+
+    def test_labels_name_the_stream_in_errors(self):
+        bad = io.StringIO("a,b\n1,2\n")
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([bad], labels=["<request body>"])
+        self.assertIn("<request body>", str(cm.exception))
+
+    def test_unlabelled_streams_get_a_usable_default(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO(self.CSV), io.StringIO("a,b\n1,2\n")])
+        self.assertIn("<stream 2>", str(cm.exception))
+
+    def test_a_single_label_may_be_a_bare_string(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO("a,b\n")], labels="<body>")
+        self.assertIn("<body>", str(cm.exception))
+
+    def test_a_bare_stream_is_not_mistaken_for_a_list_of_streams(self):
+        """Iterating a stream yields LINES; without the guard each line would be
+        treated as its own CSV and the failure would be baffling."""
+        srcs = forecast.load_sources_from(io.StringIO(self.CSV))
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 2)
+
+    def test_same_validation_as_the_file_path(self):
+        for bad, expect in [("a,b\n1,2\n", "missing column"), ("", "empty input")]:
+            with self.assertRaises(ValueError) as cm:
+                forecast.load_sources_from([io.StringIO(bad)])
+            self.assertIn(expect, str(cm.exception))
+
+    def test_coordinate_conflicts_are_caught_here_too(self):
+        conflict = ("source,lat,lon,date,score\n"
+                    "D,34.0,-111.0,2024-01-01,0.5\nD,44.0,-121.0,2024-02-01,0.2\n")
+        with self.assertRaises(ValueError) as cm:
+            forecast.load_sources_from([io.StringIO(conflict)])
+        self.assertIn("conflicting coordinates", str(cm.exception))
+
+    def test_matches_load_sources_exactly(self):
+        """One code path, so the two entry points cannot drift apart."""
+        from_file = forecast.load_sources([EXAMPLE_CSV])
+        with open(EXAMPLE_CSV) as f:
+            from_stream = forecast.load_sources_from([f])
+        self.assertEqual(from_stream, from_file)
+
+
 class TestStdin(unittest.TestCase):
     """Issue #5: `-` reads the CSV from stdin."""
     CSV = ("source,lat,lon,date,score\n"
@@ -858,6 +932,102 @@ class TestCLI(OfflineTestCase):
         self.assertEqual(params["pool_radius_km"], 15.0)
         self.assertEqual(params["harmonics"], 2)
         self.assertEqual(params["windows"], forecast.WINDOWS)
+
+
+class TestRun(OfflineTestCase):
+    """Issue #24: run() is main() minus the CLI, so a host doesn't reimplement it.
+
+    A service that copied the three passes returned 500s when analyze_base() gained
+    its n == 0 case and the copy still only checked `is None`. These tests exist so
+    that class of drift fails here instead of in production."""
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def sources(self, path=EXAMPLE_CSV):
+        return forecast.load_sources([path])
+
+    def test_matches_the_cli_json_exactly(self):
+        """The parity check: same input, same answer, whichever entry point."""
+        payload = forecast.run(self.sources(), ASOF)
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(payload, json.loads(out))
+
+    def test_a_source_with_nothing_usable_is_skipped_not_crashed(self):
+        """The exact production failure: zero usable reports used to reach
+        finalize() and raise KeyError: 'ctrl'."""
+        p = write_csv(self.tmp, "old.csv", [
+            "Ancient,34.09,-111.47,1999-01-01,0.5",
+            "Ancient,34.09,-111.47,2001-01-01,0.5",
+            "Good,34.09,-111.45,2024-01-01,1.0",
+            "Good,34.09,-111.45,2024-06-01,0.0",
+        ])
+        payload = forecast.run(self.sources(p), ASOF)
+        self.assertEqual([s["name"] for s in payload["sources"]], ["Good"])
+        self.assertEqual(len(payload["notes"]), 1)
+        self.assertEqual(payload["notes"][0]["kind"], "skip")
+        self.assertEqual(payload["notes"][0]["source"], "Ancient")
+        # and the note carries the real explanation, not the old bare wording
+        self.assertIn("predate", payload["notes"][0]["message"])
+        self.assertNotEqual(payload["notes"][0]["message"], "no reports within precip range")
+
+    def test_skip_wording_matches_the_cli(self):
+        p = write_csv(self.tmp, "old2.csv", ["A,34.09,-111.47,1999-01-01,0.5"])
+        payload = forecast.run(self.sources(p), ASOF)
+        _, _, err = run_cli([p, "--asof", "2026-07-13", "--json"])
+        self.assertIn(payload["notes"][0]["message"], err)
+
+    def test_options_are_honoured(self):
+        payload = forecast.run(self.sources(), ASOF, pool=False, harmonics=2,
+                               pool_radius_km=15.0, use_cache=False)
+        self.assertEqual(payload["params"], {"pool": False, "pool_radius_km": 15.0,
+                                             "harmonics": 2, "cache": False,
+                                             "windows": forecast.WINDOWS})
+        for s in payload["sources"]:
+            self.assertEqual(s["best"]["borrowed"], 0.0)
+
+    def test_pooling_happens_by_default(self):
+        payload = forecast.run(self.sources(), ASOF)
+        self.assertTrue(any(s["best"]["borrowed"] > 0 for s in payload["sources"]))
+
+    def test_notes_can_be_preseeded_by_the_caller(self):
+        """A host that rejected one input before calling still reports it."""
+        notes = [{"kind": "error", "source": None, "message": "second file unreadable"}]
+        payload = forecast.run(self.sources(), ASOF, notes=notes)
+        self.assertEqual(payload["notes"][0]["message"], "second file unreadable")
+
+    def test_on_note_streams_notes_as_they_happen(self):
+        seen = []
+        p = write_csv(self.tmp, "old3.csv", ["A,34.09,-111.47,1999-01-01,0.5"])
+        forecast.run(self.sources(p), ASOF, on_note=seen.append)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["kind"], "skip")
+
+    def test_asof_defaults_to_today(self):
+        payload = forecast.run(self.sources())
+        self.assertEqual(payload["asof"], date.today().isoformat())
+
+    def test_a_failing_source_becomes_a_note_not_an_exception(self):
+        boom = source(name="Boom", reports=[(date(2024, 1, 1), 1.0)])
+        def bad(lat, lon, end_date, use_cache=True):
+            if abs(lat - boom["lat"]) < 1e-9:
+                raise RuntimeError("provider exploded")
+            return load_fixture_series(lat, lon)
+        forecast.PRECIP_PROVIDER = bad
+        payload = forecast.run(self.sources() + [boom], ASOF)
+        kinds = {n["source"]: n["kind"] for n in payload["notes"]}
+        self.assertEqual(kinds.get("Boom"), "error")
+        self.assertEqual(len(payload["sources"]), 3)      # the others still ran
+
+    def test_the_whole_embedding_path_needs_no_private_api(self):
+        """load_sources_from -> run, exactly as the README tells a host to do it."""
+        with open(EXAMPLE_CSV) as f:
+            body = f.read()
+        payload = forecast.run(
+            forecast.load_sources_from([io.StringIO(body)], labels=["<request>"]), ASOF)
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(payload, json.loads(out))
 
 
 class TestJsonSchema(OfflineTestCase):

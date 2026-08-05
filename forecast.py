@@ -33,10 +33,14 @@ Usage:
 EMBEDDING IT (hosts):
     import forecast
     forecast.PRECIP_PROVIDER = my_provider   # (lat, lon, end_date, use_cache)
-    rows = [forecast.analyze(s, asof) for s in forecast.load_sources(["x.csv"])]
-  The precip backend is the one seam a host needs: swap it to read the series
-  from a shared store (Postgres/KV) instead of this script's .cache/ directory.
-  Still stdlib-only, still no change to the CLI. See PRECIP_PROVIDER below.
+    sources = forecast.load_sources_from([io.StringIO(request_body)])
+    payload = forecast.run(sources, asof)    # the same dict --json prints
+  Three seams, and between them a host needs nothing private and reimplements
+  nothing. load_sources_from() takes CSV that never touched the filesystem;
+  run() is main() minus the CLI, so a service gets the engine's real behaviour
+  instead of a copy that drifts; PRECIP_PROVIDER swaps the precip backend to a
+  shared store (Postgres/KV) instead of this script's .cache/ directory.
+  Still stdlib-only, still no change to the CLI.
 
 PIPING IT AROUND:
   * `-` as a filename reads the CSV from stdin (and stdin is used automatically
@@ -125,23 +129,60 @@ def _read_csv(f, label, sources):
         sc = max(0.0, min(1.0, float(row["score"])))
         s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
 
-def load_sources(paths):
-    """Return list of {name, lat, lon, reports=[(date, score)]}.
-    A path of "-" means stdin, so the engine can sit in a pipeline; stdin can only
-    be consumed once, so a repeated "-" is ignored after the first."""
-    sources, stdin_done = {}, False
-    for p in paths:
-        if p == "-":
-            if stdin_done:
-                continue
-            stdin_done = True
-            _read_csv(sys.stdin, "<stdin>", sources)
-        else:
-            with open(p, newline="", encoding="utf-8") as f:
-                _read_csv(f, p, sources)
+def _load(labelled_streams):
+    """The one loading path: consume (stream, label) pairs into finished sources.
+    Sorting the reports happens HERE rather than in each caller -- it is a promise
+    the loader makes, not a chore it hands back."""
+    sources = {}
+    for stream, label in labelled_streams:
+        _read_csv(stream, label, sources)
     for s in sources.values():
         s["reports"].sort()
     return list(sources.values())
+
+def load_sources_from(streams, labels=None):
+    """Return list of {name, lat, lon, reports=[(date, score)]} from already-open
+    TEXT streams -- anything csv.DictReader can read, e.g. io.StringIO.
+
+    This is the entry point for an embedding host holding CSV it never wrote to
+    disk (an HTTP request body, a database column, an S3 object):
+
+        sources = forecast.load_sources_from([io.StringIO(request_body)])
+
+    `labels` name the streams in error messages, the way filenames do for
+    load_sources; a stream with no label is called "<stream N>". Pass something a
+    user will recognise -- the label is what turns "CSV missing column(s)" into a
+    message that says WHICH input was wrong.
+
+    Reports come back sorted, same as load_sources: callers owe nothing."""
+    if hasattr(streams, "read"):        # a bare stream, not a list of them --
+        streams = [streams]             # iterating it would read one LINE per "stream"
+    if isinstance(labels, str):
+        labels = [labels]
+    labels = list(labels) if labels is not None else []
+    return _load((s, labels[i] if i < len(labels) else f"<stream {i + 1}>")
+                 for i, s in enumerate(streams))
+
+def load_sources(paths):
+    """Return list of {name, lat, lon, reports=[(date, score)]} from file paths.
+    A path of "-" means stdin, so the engine can sit in a pipeline; stdin can only
+    be consumed once, so a repeated "-" is ignored after the first.
+
+    Hosts working from memory rather than the filesystem want load_sources_from()."""
+    def opened():
+        stdin_done = False
+        for p in paths:
+            if p == "-":
+                if stdin_done:
+                    continue
+                stdin_done = True
+                yield sys.stdin, "<stdin>"
+            else:
+                # The consumer reads the file before this generator resumes, so the
+                # `with` still closes each one immediately after it is consumed.
+                with open(p, newline="", encoding="utf-8") as f:
+                    yield f, p
+    return _load(opened())
 
 # --------------------------------------------------------------------------- #
 # Precipitation: a swappable provider
@@ -205,7 +246,10 @@ def open_meteo_provider(lat, lon, end_date, use_cache=True):
     cpath = _cache_path(lat, lon)
     if use_cache and os.path.exists(cpath):
         try:
-            cached = json.load(open(cpath))
+            # Closed explicitly: CPython's refcounting hides a leak here, but a
+            # long-lived host process would hold one handle per cached coordinate.
+            with open(cpath) as f:
+                cached = json.load(f)
             times = cached.get("daily", {}).get("time") or []
             if times and times[-1] >= end_date.isoformat():
                 return _trim_daily(cached, end_date)   # cache runs far enough
@@ -214,7 +258,8 @@ def open_meteo_provider(lat, lon, end_date, use_cache=True):
     with urllib.request.urlopen(_open_meteo_url(lat, lon, end_date), timeout=120) as r:
         data = json.load(r)
     os.makedirs(CACHE_DIR, exist_ok=True)
-    json.dump(data, open(cpath, "w"))
+    with open(cpath, "w") as f:
+        json.dump(data, f)
     return data
 
 PRECIP_PROVIDER = open_meteo_provider
@@ -723,6 +768,58 @@ def parse_args(argv):
         i += 1
     return files, opts
 
+# --------------------------------------------------------------------------- #
+# The three passes, with no CLI attached
+# ---------------------------------------------------------------------------
+# This is the engine's actual behaviour, and both entry points go through it, so
+# a host cannot end up running a copy that drifts. It drifted once: a service
+# reimplementing these passes kept checking `analyze_base(...) is None` after the
+# n == 0 case was added, and returned 500s on input the CLI handled fine.
+# --------------------------------------------------------------------------- #
+def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note):
+    """Pass 1 (per-source bases) -> pass 2 (pool) -> pass 3 (finalize). `note` is
+    called as note(kind, message, source_name) for anything skipped or failed."""
+    bases = []
+    for src in sources:
+        try:
+            b = analyze_base(src, asof, use_cache, n_harm)
+            if b is None or b["n"] == 0:
+                # Say WHY: "you gave me nothing" and "all your data predates my
+                # precipitation record" are very different problems for the author.
+                note("skip", excluded_note(b) if b else "no reports", src["name"])
+                continue
+            bases.append(b)
+        except Exception as e:
+            note("error", str(e), src["name"])
+    if pool and len(bases) > 1:                  # needs >=2 sources to borrow
+        pool_controlled(bases, radius_km)
+    return [finalize(b) for b in bases]
+
+def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
+        use_cache=True, notes=None, on_note=None):
+    """Run the engine over loaded sources and return the same dict --json prints.
+
+    This is what main() does minus argument parsing and output, so an embedding
+    host gets the engine's real behaviour -- including every future change to how
+    sources are skipped or classified -- rather than a copy of these passes:
+
+        sources = forecast.load_sources_from([io.StringIO(body)])
+        payload = forecast.run(sources, date(2026, 8, 15))
+
+    `asof` defaults to today. `notes` may be a list to append to (pre-seed it with
+    anything that went wrong before this point, e.g. a rejected input file, and it
+    will appear in the returned payload). `on_note` is called with each note dict
+    as it happens, for a caller that wants to log or stream them."""
+    asof = asof or date.today()
+    notes = notes if notes is not None else []
+    def note(kind, msg, name=None):
+        entry = {"kind": kind, "source": name, "message": msg}
+        notes.append(entry)
+        if on_note:
+            on_note(entry)
+    rows = _analyse(sources, asof, use_cache, harmonics, pool, pool_radius_km, note)
+    return run_json(rows, notes, asof, pool, pool_radius_km, harmonics, use_cache)
+
 def main(argv):
     try:
         files, opts = parse_args(argv)
@@ -752,24 +849,9 @@ def main(argv):
                       sys.stdout, indent=2)
             print()
         return 2
-    # Pass 1: per-source base (fetch precip + per-window r vectors), no window chosen yet.
-    bases = []
-    for src in sources:
-        try:
-            b = analyze_base(src, asof, use_cache, n_harm)
-            if b is None or b["n"] == 0:
-                # Say WHY: "you gave me nothing" and "all your data predates my
-                # precipitation record" are very different problems for the author.
-                note("skip", excluded_note(b) if b else "no reports", src["name"])
-                continue
-            bases.append(b)
-        except Exception as e:
-            note("error", str(e), src["name"])
-    # Pass 2: pool the season-controlled r across nearby sources (needs >=2 to borrow).
-    if do_pool and len(bases) > 1:
-        pool_controlled(bases, radius_km)
-    # Pass 3: finalize (best window / class / analog read off the pooled r) + report.
-    rows = [finalize(b) for b in bases]
+    # The analysis itself lives in _analyse(), shared with run(), so the CLI and an
+    # embedding host cannot answer differently for the same input.
+    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note)
     if as_json:
         json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache),
                   sys.stdout, indent=2)
