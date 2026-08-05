@@ -27,6 +27,17 @@ Usage:
     python3 forecast.py sources.csv --no-cache          # force precip re-fetch
     python3 forecast.py area.csv --pool-radius 15       # neighbor radius km (pooling)
     python3 forecast.py area.csv --no-pool              # analyze each source alone
+    cat area.csv | python3 forecast.py -                # read the CSV from stdin
+    python3 forecast.py area.csv --json                 # machine-readable output
+
+PIPING IT AROUND:
+  * `-` as a filename reads the CSV from stdin (and stdin is used automatically
+    when no files are given and stdin is not a terminal), so the engine drops
+    into a pipeline: your normalizer | forecast.py - --json | your consumer.
+  * `--json` prints one JSON object on stdout instead of the text report -- every
+    number the text report shows, unrounded-to-4dp, plus the run's parameters.
+    In --json mode all diagnostics ([skip]/[error]) go to stderr and are also
+    collected under "notes", so stdout stays valid JSON.
 
 Pure standard library. No pip installs. Precip: Open-Meteo ERA5 archive (free).
 
@@ -64,26 +75,40 @@ POOL_RADIUS_KM = 25.0   # default neighborhood radius for pooling (see pool_cont
 # --------------------------------------------------------------------------- #
 # Input: normalized CSV -> sources
 # --------------------------------------------------------------------------- #
+def _read_csv(f, label, sources):
+    """Accumulate one open CSV stream into `sources` (keyed by source name)."""
+    reader = csv.DictReader(f)
+    if reader.fieldnames is None:
+        raise ValueError(f"{label}: empty input (no CSV header)")
+    need = {"source", "lat", "lon", "date", "score"}
+    missing = need - set(h.strip() for h in reader.fieldnames)
+    if missing:
+        raise ValueError(f"{label}: CSV missing column(s): {', '.join(sorted(missing))}")
+    for row in reader:
+        name = row["source"].strip()
+        if not name:
+            continue
+        s = sources.setdefault(name, {"name": name,
+                                      "lat": float(row["lat"]),
+                                      "lon": float(row["lon"]),
+                                      "reports": []})
+        sc = max(0.0, min(1.0, float(row["score"])))
+        s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
+
 def load_sources(paths):
-    """Return list of {name, lat, lon, reports=[(date, score)]}."""
-    sources = {}
+    """Return list of {name, lat, lon, reports=[(date, score)]}.
+    A path of "-" means stdin, so the engine can sit in a pipeline; stdin can only
+    be consumed once, so a repeated "-" is ignored after the first."""
+    sources, stdin_done = {}, False
     for p in paths:
-        with open(p, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            need = {"source", "lat", "lon", "date", "score"}
-            missing = need - set(h.strip() for h in (reader.fieldnames or []))
-            if missing:
-                raise ValueError(f"{p}: CSV missing column(s): {', '.join(sorted(missing))}")
-            for row in reader:
-                name = row["source"].strip()
-                if not name:
-                    continue
-                s = sources.setdefault(name, {"name": name,
-                                              "lat": float(row["lat"]),
-                                              "lon": float(row["lon"]),
-                                              "reports": []})
-                sc = max(0.0, min(1.0, float(row["score"])))
-                s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
+        if p == "-":
+            if stdin_done:
+                continue
+            stdin_done = True
+            _read_csv(sys.stdin, "<stdin>", sources)
+        else:
+            with open(p, newline="", encoding="utf-8") as f:
+                _read_csv(f, p, sources)
     for s in sources.values():
         s["reports"].sort()
     return list(sources.values())
@@ -437,6 +462,54 @@ def print_table(rows):
     print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
     print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
 
+# --------------------------------------------------------------------------- #
+# JSON output: the same numbers the text report shows, for a consumer instead of
+# a human. Everything the verdict depends on is explicit (own vs pooled r, how
+# much was borrowed, the window it was read at) so a caller can re-derive or
+# second-guess the headline without re-running the engine.
+# --------------------------------------------------------------------------- #
+def _r4(x):
+    return round(x, 4)
+
+def source_json(a):
+    ctrl = dict(a["ctrl_cors"])
+    return {
+        "name": a["name"], "lat": a["lat"], "lon": a["lon"],
+        "n": a["n"], "small_n": a["n"] < 25,
+        "pct_dry": a["pct_dry"],
+        "mean_flow": _r4(a["mean"]),
+        "annual_precip_in": round(a["annual_precip"], 2),
+        "type": a["type"],
+        "mean_flow_by_month": {str(m): _r4(v) for m, v in a["by_month"].items()},
+        # per-window, strongest raw first -- each source's OWN numbers
+        "correlations": [{"window": name, "days": int(name[:-1]),
+                          "raw_r": _r4(r), "ctrl_r": _r4(ctrl[name])}
+                         for r, name in a["cors"]],
+        # the window the verdict was read at; `r` is pooled, `own_ctrl_r` is not
+        "best": {"window": a["best"], "days": int(a["best"][:-1]),
+                 "r": _r4(a["best_ctrl_r"]),
+                 "own_ctrl_r": _r4(a["best_own_ctrl_r"]),
+                 "raw_r": _r4(a["best_raw_r"]),
+                 "borrowed": _r4(a["borrowed_at_best"]),
+                 "group_n": a["group_n"],
+                 "signal_check": survival_note(a["best_raw_r"], a["best_own_ctrl_r"])},
+        "asof": a["asof"].isoformat(),
+        "precip_in": round(a["curval"], 3),
+        "predicted_flow": _r4(a["pred"]),
+        "verdict": running_phrase(a["pred"]),
+        "harmonics": a["n_harm"],
+    }
+
+def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache):
+    """One object on stdout. Sources stay in input order -- sort client-side."""
+    return {
+        "asof": asof.isoformat(),
+        "params": {"pool": do_pool, "pool_radius_km": radius_km,
+                   "harmonics": n_harm, "cache": use_cache, "windows": WINDOWS},
+        "sources": [source_json(a) for a in rows],
+        "notes": notes,
+    }
+
 _VALUE_FLAGS = ("--asof", "--harmonics", "--pool-radius")
 def _is_flag_value(argv, a):
     """True if `a` is the space-separated value following a value-taking flag."""
@@ -450,6 +523,7 @@ def main(argv):
     asof = date.today()
     use_cache = "--no-cache" not in argv
     do_pool = "--no-pool" not in argv
+    as_json = "--json" in argv
     n_harm = 1
     radius_km = POOL_RADIUS_KM
     for i, a in enumerate(argv):
@@ -465,27 +539,48 @@ def main(argv):
             radius_km = float(argv[i + 1])
         elif a.startswith("--pool-radius="):
             radius_km = float(a.split("=", 1)[1])
+    # No files named? Take the CSV from stdin when it's a pipe, so `... | forecast.py`
+    # works bare; a bare invocation from a terminal still prints the usage doc.
+    if not files and not sys.stdin.isatty():
+        files = ["-"]
     if not files:
         print(__doc__); return 1
+    # In --json mode stdout is reserved for the JSON object, so diagnostics go to
+    # stderr -- and into "notes", so a consumer reading only stdout still sees them.
+    notes = []
+    def note(kind, msg, name=None):
+        notes.append({"kind": kind, "source": name, "message": msg})
+        line = f"[{kind}] " + (f"{name}: " if name else "") + msg
+        print(line, file=sys.stderr if as_json else sys.stdout)
     try:
         sources = load_sources(files)
     except Exception as e:
-        print(f"[error] {e}"); return 2
+        note("error", str(e))
+        if as_json:
+            json.dump(run_json([], notes, asof, do_pool, radius_km, n_harm, use_cache),
+                      sys.stdout, indent=2)
+            print()
+        return 2
     # Pass 1: per-source base (fetch precip + per-window r vectors), no window chosen yet.
     bases = []
     for src in sources:
         try:
             b = analyze_base(src, asof, use_cache, n_harm)
             if b is None:
-                print(f"[skip] {src['name']}: no reports within precip range"); continue
+                note("skip", "no reports within precip range", src["name"]); continue
             bases.append(b)
         except Exception as e:
-            print(f"[error] {src['name']}: {e}")
+            note("error", str(e), src["name"])
     # Pass 2: pool the season-controlled r across nearby sources (needs >=2 to borrow).
     if do_pool and len(bases) > 1:
         pool_controlled(bases, radius_km)
     # Pass 3: finalize (best window / class / analog read off the pooled r) + report.
     rows = [finalize(b) for b in bases]
+    if as_json:
+        json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache),
+                  sys.stdout, indent=2)
+        print()
+        return 0
     for a in rows:
         print_source(a)
     if len(rows) > 1:
