@@ -221,14 +221,35 @@ its neighbors and gets rescued onto the rain window they validate, while buffere
 
 ## Roadmap
 
+Shipped:
+
 - [x] **Pooling / borrow-strength** for small-n sources — proximity neighborhood
       (`--pool-radius`), data-driven empirical-Bayes shrinkage. `--no-pool` to disable.
 - [x] **Season control** (day-of-year, annual harmonics) — reports a
       season-controlled r beside raw; classification keys off it. `--harmonics=N`.
 - [x] **JSON output & stdin** (`--json`, `-`) so the engine composes in a pipeline.
-- [ ] **Higher-res precip** option (PRISM / Daymet, or radar QPE for monsoon).
-- [ ] **Log-your-own-visits** so each source sharpens over time.
-- [ ] **Table export** (Markdown/HTML) for trip notes.
+- [x] **Injectable precip provider** so an embedding host can supply its own backend
+      or shared cache — see [Embedding the engine](#embedding-the-engine-hosts).
+
+Planned — the issue is where the detail and the open questions live:
+
+- [ ] **Higher-res precip** — pluggable `--precip` with an IEM PRISM (4 km) backend
+      ([#17]), then MRMS 1 km radar as a monsoon cross-check ([#18]).
+- [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
+- [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
+- [ ] **Zero-report mode** — antecedent-rain percentile against a site's own
+      climatology, for a source with no field reports at all ([#8]).
+- [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
+      given ERA5 reaches 1940 ([#21]).
+- [ ] **Test suite** — stdlib, offline, deterministic ([#15]).
+
+[#8]: https://github.com/jacobemerick/backcountry-water-oracle/issues/8
+[#15]: https://github.com/jacobemerick/backcountry-water-oracle/issues/15
+[#17]: https://github.com/jacobemerick/backcountry-water-oracle/issues/17
+[#18]: https://github.com/jacobemerick/backcountry-water-oracle/issues/18
+[#19]: https://github.com/jacobemerick/backcountry-water-oracle/issues/19
+[#20]: https://github.com/jacobemerick/backcountry-water-oracle/issues/20
+[#21]: https://github.com/jacobemerick/backcountry-water-oracle/issues/21
 
 ## Example data
 
