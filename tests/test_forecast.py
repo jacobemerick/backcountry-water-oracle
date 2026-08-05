@@ -536,6 +536,94 @@ class TestPrecipCache(unittest.TestCase):
 # =========================================================================== #
 # Statistics -- mostly invariants, since the exact values are what is under test
 # =========================================================================== #
+class TestCacheLocation(unittest.TestCase):
+    """Where downloaded precipitation lands.
+
+    It used to be unconditionally `.cache/` beside the module, which writes into
+    site-packages once the engine is installed -- and simply fails where that is
+    read-only, which is every container and serverless bundle."""
+    def setUp(self):
+        import tempfile, unittest.mock
+        self.tmp = tempfile.mkdtemp()
+        self.mock = unittest.mock
+
+    def resolve(self, env=None, platform="linux", here=None):
+        with self.mock.patch.dict(os.environ, env or {}, clear=True), \
+             self.mock.patch.object(sys, "platform", platform), \
+             self.mock.patch.object(forecast, "HERE", here or self.tmp):
+            return forecast._default_cache_dir()
+
+    def test_explicit_env_var_wins(self):
+        got = self.resolve(env={"WATER_ORACLE_CACHE": "/somewhere/else"})
+        self.assertEqual(got, "/somewhere/else")
+
+    def test_env_var_beats_an_adjacent_cache(self):
+        os.makedirs(os.path.join(self.tmp, ".cache"))
+        got = self.resolve(env={"WATER_ORACLE_CACHE": "/somewhere/else"})
+        self.assertEqual(got, "/somewhere/else")
+
+    def test_an_existing_adjacent_cache_is_kept(self):
+        """A working checkout must not silently re-download ~19 years per source."""
+        beside = os.path.join(self.tmp, ".cache")
+        os.makedirs(beside)
+        self.assertEqual(self.resolve(), beside)
+
+    def test_no_adjacent_cache_means_the_user_cache(self):
+        got = self.resolve(env={"HOME": "/home/someone"})
+        self.assertNotIn(self.tmp, got)
+        self.assertIn("backcountry-water-oracle", got)
+
+    def test_platform_conventions(self):
+        self.assertEqual(
+            self.resolve(env={"HOME": "/home/someone"}, platform="linux"),
+            "/home/someone/.cache/backcountry-water-oracle")
+        self.assertEqual(
+            self.resolve(env={"HOME": "/home/someone", "XDG_CACHE_HOME": "/xdg"},
+                         platform="linux"),
+            "/xdg/backcountry-water-oracle")
+        self.assertEqual(
+            self.resolve(env={"HOME": "/Users/someone"}, platform="darwin"),
+            "/Users/someone/Library/Caches/backcountry-water-oracle")
+        self.assertEqual(
+            self.resolve(env={"LOCALAPPDATA": r"C:\Users\someone\AppData\Local"},
+                         platform="win32"),
+            os.path.join(r"C:\Users\someone\AppData\Local", "backcountry-water-oracle"))
+
+    def test_never_resolves_inside_the_module_directory_when_installed(self):
+        """The actual bug: an installed engine writing into site-packages."""
+        fake_site_packages = os.path.join(self.tmp, "site-packages")
+        os.makedirs(fake_site_packages)
+        got = self.resolve(env={"HOME": "/home/someone"}, here=fake_site_packages)
+        self.assertFalse(got.startswith(fake_site_packages))
+
+    def test_the_module_constant_is_wired_to_the_resolver(self):
+        """Not just that the resolver is right, but that CACHE_DIR actually uses it.
+
+        Without this, reverting the constant to `os.path.join(HERE, ".cache")`
+        passes every other test in this class -- in a checkout the two expressions
+        agree, so only re-importing under a different environment can tell them
+        apart. That exact mutation survived until this test existed."""
+        import importlib
+        try:
+            with self.mock.patch.dict(os.environ, {"WATER_ORACLE_CACHE": self.tmp},
+                                      clear=False):
+                importlib.reload(forecast)
+                self.assertEqual(forecast.CACHE_DIR, self.tmp)
+        finally:
+            # Outside the patch, so the env var is gone before we re-resolve.
+            importlib.reload(forecast)
+        self.assertNotEqual(forecast.CACHE_DIR, self.tmp)
+
+    def test_the_module_constant_is_still_assignable(self):
+        """Hosts point CACHE_DIR wherever they like; that must keep working."""
+        prev = forecast.CACHE_DIR
+        try:
+            forecast.CACHE_DIR = self.tmp
+            self.assertEqual(os.path.dirname(forecast._cache_path(34.0, -111.0)), self.tmp)
+        finally:
+            forecast.CACHE_DIR = prev
+
+
 class TestStats(unittest.TestCase):
     def test_ranks_average_ties(self):
         self.assertEqual(forecast._ranks([1, 2, 2, 3]), [1.0, 2.5, 2.5, 4.0])
