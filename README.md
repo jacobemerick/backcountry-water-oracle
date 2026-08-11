@@ -445,6 +445,11 @@ A deliberate pin produces **no `skip` note**: asking what rain alone can say is 
 feature working. A source that *lost* reports still gets one, because that's
 information you didn't ask for.
 
+The most useful thing next to a pin is usually a *neighbor* — put nearby reported
+sources in the same CSV and read their rows. The engine won't transfer their read
+onto the pin (that's [#8], and the reasoning is on the issue), so comparing them is
+your call, not something the payload does for you.
+
 ## Multiple sources & pooling
 
 Multi-source is native — one CSV can hold many sources and the engine tables them
@@ -508,20 +513,22 @@ Shipped:
 - [x] **Pluggable precip product** ([#17]) — `--precip {open-meteo,iem:prism,iem:mrms}`,
       ERA5 still the default. The bake-off that reshaped this issue found it is *not*
       a resolution upgrade; see [`--precip`](#choosing-a-precip-product---precip).
-- [x] **Antecedent-rain percentiles** — the first half of [#8]: every source's run-up
-      ranked against its own climatology, and the only reading a coordinate with no
-      reports gets. See [above](#antecedent-rain-vs-the-sites-own-climatology).
+- [x] **Antecedent-rain percentiles** (from [#8]) — every source's run-up ranked
+      against its own climatology, and the only reading a coordinate with no reports
+      gets. See [above](#antecedent-rain-vs-the-sites-own-climatology). #8 stays open
+      for the rest of it, below.
 
 Planned — the issue is where the detail and the open questions live:
 
 - [ ] **MRMS radar cross-check** ([#18]) — report radar for the recent window beside
       the ERA5 fit, rather than refitting the model on it. The one the bake-off
       says is worth building.
-- [ ] **Neighbor transfer** — the second half of [#8]: for a coordinate with no
-      reports, surface a *nearby* reported source's read, clearly labelled as the
-      neighbor's rather than as this coordinate's. Pooling doesn't give this for
-      free — it shrinks the correlation toward neighbors, but the analog read still
-      comes from each source's own reports.
+- [ ] **Neighbor disclosure** — the rest of [#8]: for a coordinate with no reports,
+      *name* the reported sources nearby (distance, type, verdict) and flag when
+      they disagree, rather than synthesizing a read for the pin. Transferring a
+      neighbor's read is not planned: inside one ERA5 cell it provably reproduces
+      that neighbor's own answer, and past one cell the "nearby, so similar"
+      premise is what stops holding.
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
 - [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
