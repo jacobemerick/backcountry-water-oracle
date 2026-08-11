@@ -1085,6 +1085,43 @@ class TestRainPercentiles(unittest.TestCase):
                                "21st", "22nd", "100th"])
 
 
+class TestNeighborsOf(unittest.TestCase):
+    """The selection rule alone, on synthetic rows -- no precip, no fixtures (#8)."""
+    def row(self, name, lon, n=10, type_="Flashy (needs recent rain)", pred=0.5):
+        return {"name": name, "lat": 34.09, "lon": lon, "n": n,
+                "type": type_, "pct_dry": 20, "pred": pred}
+
+    def test_only_reported_sources_qualify(self):
+        pin = self.row("Pin", -111.47, n=0)
+        rows = [pin, self.row("Reported", -111.48), self.row("OtherPin", -111.46, n=0)]
+        got = forecast.neighbors_of(pin, rows, 25.0)
+        self.assertEqual([o["name"] for o in got], ["Reported"])
+
+    def test_a_source_is_never_its_own_neighbour(self):
+        a = self.row("A", -111.47)
+        self.assertEqual(forecast.neighbors_of(a, [a], 25.0), [])
+
+    def test_two_sources_at_one_spot_are_both_neighbours(self):
+        """Distinct names at the same coordinate are legal (the loader allows it)."""
+        pin = self.row("Pin", -111.47, n=0)
+        rows = [pin, self.row("A", -111.48), self.row("B", -111.48)]
+        self.assertEqual(len(forecast.neighbors_of(pin, rows, 25.0)), 2)
+
+    def test_the_radius_is_inclusive(self):
+        pin = self.row("Pin", -111.47, n=0)
+        other = self.row("Edge", -111.48)
+        km = forecast._haversine_km(34.09, -111.47, 34.09, -111.48)
+        self.assertEqual(len(forecast.neighbors_of(pin, [pin, other], km)), 1)
+        self.assertEqual(len(forecast.neighbors_of(pin, [pin, other], km * 0.99)), 0)
+
+    def test_the_verdict_is_the_neighbours_own_phrase(self):
+        pin = self.row("Pin", -111.47, n=0)
+        rows = [pin, self.row("Wet", -111.48, pred=0.95)]
+        got = forecast.neighbors_of(pin, rows, 25.0)[0]
+        self.assertEqual(got["verdict"], forecast.running_phrase(0.95))
+        self.assertEqual(got["predicted_flow"], 0.95)
+
+
 class TestTrimDaily(unittest.TestCase):
     def series(self, n=10):
         start = date(2024, 1, 1)
@@ -1446,6 +1483,107 @@ class TestZeroReportMode(OfflineTestCase):
         pins_only = self.table(self.PIN, forecast.DEFAULT_PRECIP)
         self.assertIn("Reminder: ERA5", pins_only)
 
+    # -- neighbor disclosure (#8, second half) -------------------------------- #
+    # The pin sits at one end so the two neighbours are at unambiguous, different
+    # distances (~1.8 km and ~3.7 km) -- putting it in the middle made them exactly
+    # equidistant, and "nearest first" then depended on dict order.
+    MIXED = ("source,lat,lon,date,score\n"
+             "Pin,34.09,-111.45,,\n"
+             "Buffered,34.09,-111.49,2024-01-01,1.0\n"
+             "Buffered,34.09,-111.49,2024-06-01,1.0\n"
+             "Flashy,34.09,-111.47,2024-01-01,1.0\n"
+             "Flashy,34.09,-111.47,2024-06-01,0.0\n")
+
+    def pin(self, csv=None):
+        return self.payload(csv or self.MIXED)["sources"][0]
+
+    def test_a_pin_is_told_who_is_nearby(self):
+        got = self.pin()
+        self.assertEqual([o["name"] for o in got["neighbors"]], ["Flashy", "Buffered"])
+        self.assertEqual(got["n"], 0)
+
+    def test_neighbors_are_nearest_first(self):
+        km = [o["distance_km"] for o in self.pin()["neighbors"]]
+        self.assertEqual(km, sorted(km))
+
+    def test_a_neighbour_carries_its_own_read_under_its_own_name(self):
+        o = self.pin()["neighbors"][0]
+        self.assertEqual(sorted(o), sorted(["name", "distance_km", "n", "type",
+                                            "pct_dry", "verdict", "predicted_flow"]))
+        flashy = next(s for s in self.payload(self.MIXED)["sources"]
+                      if s["name"] == "Flashy")
+        self.assertEqual(o["verdict"], flashy["verdict"])       # quoted, not derived
+        self.assertEqual(o["predicted_flow"], flashy["predicted_flow"])
+        self.assertEqual(o["type"], flashy["type"])
+
+    def test_nothing_is_transferred_onto_the_pin(self):
+        """The whole design decision: neighbors are shown, never absorbed."""
+        got = self.pin()
+        for k in ("verdict", "predicted_flow", "type", "pct_dry", "best", "precip_in"):
+            self.assertIsNone(got[k], k)
+
+    def test_disagreement_is_reported_because_it_is_the_answer(self):
+        got = self.pin()
+        self.assertTrue(got["neighbors_disagree"])
+        self.assertNotEqual(got["neighbors"][0]["type"], got["neighbors"][1]["type"])
+
+    def test_agreeing_neighbours_do_not_raise_the_flag(self):
+        csv = ("source,lat,lon,date,score\nPin,34.09,-111.47,,\n"
+               "A,34.09,-111.49,2024-01-01,1.0\nA,34.09,-111.49,2024-06-01,1.0\n"
+               "B,34.09,-111.45,2024-01-01,1.0\nB,34.09,-111.45,2024-06-01,1.0\n")
+        got = self.pin(csv)
+        self.assertEqual(len({o["type"] for o in got["neighbors"]}), 1)
+        self.assertFalse(got["neighbors_disagree"])
+
+    def test_one_neighbour_cannot_disagree_with_itself(self):
+        csv = ("source,lat,lon,date,score\nPin,34.09,-111.47,,\n"
+               "A,34.09,-111.49,2024-01-01,1.0\nA,34.09,-111.49,2024-06-01,0.0\n")
+        got = self.pin(csv)
+        self.assertEqual(len(got["neighbors"]), 1)
+        self.assertFalse(got["neighbors_disagree"])
+
+    def test_a_pin_is_not_a_neighbour_to_another_pin(self):
+        """Two pins inform each other of nothing."""
+        got = self.pin("source,lat,lon,date,score\n"
+                       "Pin,34.09,-111.47,,\nPin2,34.09,-111.45,,\n")
+        self.assertEqual(got["neighbors"], [])
+        self.assertFalse(got["neighbors_disagree"])
+
+    def test_the_radius_decides_who_counts_as_nearby(self):
+        """~1.8 km and ~3.7 km out; a 2.5 km radius keeps only the closer one."""
+        srcs = forecast.load_sources_from([io.StringIO(self.MIXED)])
+        tight = forecast.run(srcs, ASOF, pool_radius_km=2.5)["sources"][0]
+        wide = forecast.run(srcs, ASOF, pool_radius_km=25.0)["sources"][0]
+        self.assertEqual([o["name"] for o in tight["neighbors"]], ["Flashy"])
+        self.assertEqual([o["name"] for o in wide["neighbors"]], ["Flashy", "Buffered"])
+        # and with only one left in range there is nothing to disagree with
+        self.assertFalse(tight["neighbors_disagree"])
+        self.assertTrue(wide["neighbors_disagree"])
+
+    def test_reported_sources_carry_the_key_but_not_the_list(self):
+        """Same shape everywhere; populated only where there is no verdict."""
+        for s in self.payload(self.MIXED)["sources"]:
+            self.assertIn("neighbors", s)
+            if s["n"] > 0:
+                self.assertEqual(s["neighbors"], [])
+                self.assertFalse(s["neighbors_disagree"])
+
+    def test_disclosure_survives_no_pool(self):
+        """--no-pool turns off BORROWING. Saying what is nearby is not borrowing."""
+        srcs = forecast.load_sources_from([io.StringIO(self.MIXED)])
+        got = forecast.run(srcs, ASOF, pool=False)["sources"][0]
+        self.assertEqual(len(got["neighbors"]), 2)
+
+    def test_the_report_shows_the_neighbours_and_the_disagreement(self):
+        out = self.text(self.MIXED)
+        self.assertIn("NEARBY REPORTED SOURCES", out)
+        self.assertIn("NOT this coordinate's", out)
+        self.assertIn("safe stand-in", out)
+
+    def test_the_report_says_so_when_there_is_nobody_nearby(self):
+        out = self.text(self.PIN)
+        self.assertIn("No reported sources nearby", out)
+
     def test_a_pin_gets_the_product_caveat_like_anything_else(self):
         """A rain-only source is still fit on whatever product answered, so the
         run-wide caveat has to reach a payload that contains nothing but pins."""
@@ -1673,7 +1811,7 @@ class TestJsonSchema(OfflineTestCase):
             "name", "lat", "lon", "n", "small_n", "reports", "pct_dry", "mean_flow",
             "annual_precip_in", "type", "mean_flow_by_month", "correlations", "best",
             "asof", "precip_in", "predicted_flow", "verdict", "harmonics",
-            "rain_percentiles"]))
+            "rain_percentiles", "neighbors", "neighbors_disagree"]))
 
     def test_rain_percentile_rows_cover_every_window(self):
         rain = self.src["rain_percentiles"]
