@@ -44,7 +44,7 @@ python3 forecast.py area.csv --json                           # machine-readable
 Or install it and get a `water-forecast` command anywhere:
 
 ```bash
-pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.1.0
+pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.2.0
 water-forecast area.csv --json
 water-forecast --version
 ```
@@ -74,7 +74,7 @@ sources = bwo.load_sources_from([io.StringIO(request_body)])
 payload = bwo.run(sources, date(2026, 8, 15))            # what --json prints
 ```
 
-Pin it. `pip install git+https://github.com/…@v0.1.0` — an exact pin makes every
+Pin it. `pip install git+https://github.com/…@v0.2.0` — an exact pin makes every
 upgrade deliberate, which is the point after the alternative (a vendored copy)
 drifted twice.
 
@@ -229,7 +229,7 @@ both stdlib-only by rule.
 
 The version number only means something if the surface it covers is written
 down. **These are supported** — a breaking change to any of them is a version
-bump and a changelog entry:
+bump and an entry in [CHANGELOG.md](CHANGELOG.md):
 
 | | |
 |---|---|
@@ -257,7 +257,8 @@ prior or a season-control fix can leave every signature and every key identical
 and still turn *Marginal* into *Likely DRY* for the same CSV on the same date —
 that has already happened twice here (season control, then pooling).
 
-Those changes go in the changelog, and every payload carries
+Those changes go in [CHANGELOG.md](CHANGELOG.md) — which says, per release,
+whether the numbers moved — and every payload carries
 `params.engine_version` so a stored forecast can be traced to the code that made
 it. If you need two forecasts to be comparable, check that field: same version
 means the method didn't move underneath you, and different versions mean it may
@@ -322,7 +323,7 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
 ```jsonc
 {
   "asof": "2026-07-13",
-  "params": { "engine_version": "0.1.0", "precip": "open-meteo", "radar": "iem:mrms",
+  "params": { "engine_version": "0.2.0", "precip": "open-meteo", "radar": "iem:mrms",
               "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
               "cache": true, "windows": [30, 60, 90, 180, 270, 365] },
   "sources": [{

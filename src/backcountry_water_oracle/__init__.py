@@ -97,7 +97,7 @@ from datetime import date, timedelta
 # verdicts without touching either surface, so those go in the changelog and are
 # stamped into every payload as params.engine_version. The golden test in
 # tests/ fails whenever that happens, which is the signal to write it down.
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

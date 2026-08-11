@@ -1,7 +1,7 @@
 {
   "asof": "2026-07-13",
   "params": {
-    "engine_version": "0.1.0",
+    "engine_version": "0.2.0",
     "precip": "open-meteo",
     "radar": "none",
     "pool": true,
