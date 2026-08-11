@@ -19,13 +19,18 @@ Products:
 
 THIS IS A RESEARCH TOOL, NOT PART OF THE ENGINE. It hits the network, it is not
 covered by the test suite, and nothing in forecast.py imports it. It is stdlib-
-only like everything else here, and it caches every fetch so a re-run is free
-and IEM gets asked once per coordinate-year.
+only like everything else here.
+
+It no longer carries its own fetching: since #17 the engine has the IEM providers
+as built-ins (`--precip iem:prism` / `iem:mrms`), so this asks for them by name
+through forecast.PRECIP_PROVIDERS. That is deliberate -- a bake-off that fetched
+differently from the engine would be measuring its own fetching as much as the
+products. Caching and the be-nice-to-IEM delay now live there too.
 
 Findings from the first run (Mazatzal, 2026-08-05) are in tools/README.md and in
 the comments on issues #17 and #21.
 """
-import json, os, sys, time, urllib.request
+import json, os, sys, time, urllib.request      # time/urllib: --probe only, below
 from datetime import date, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,47 +38,21 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 import backcountry_water_oracle as forecast                          # noqa: E402
 
-IEM_CACHE = os.path.join(forecast.CACHE_DIR, "iem")
-PRODUCTS = ("ERA5", "PRISM", "MRMS")
+# Display name -> the engine's provider name. ERA5 is spelled out because the
+# engine calls it after the service, and this table is about the products.
+PRODUCTS = {"ERA5": "open-meteo", "PRISM": "iem:prism", "MRMS": "iem:mrms"}
 
 # --------------------------------------------------------------------------- #
-# Fetching
+# Fetching -- all of it delegated to the engine's providers
 # --------------------------------------------------------------------------- #
-def iem_year(lat, lon, year, start, end):
-    """One coordinate-year of IEMRE daily data, cached on disk."""
-    os.makedirs(IEM_CACHE, exist_ok=True)
-    path = os.path.join(IEM_CACHE, f"{lat}_{lon}_{year}.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    d1 = max(date(year, 1, 1), start).isoformat()
-    d2 = min(date(year, 12, 31), end).isoformat()
-    url = f"https://mesonet.agron.iastate.edu/iemre/multiday/{d1}/{d2}/{lat}/{lon}/json"
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(url, timeout=120) as r:
-                data = json.load(r)
-            break
-        except Exception:
-            if attempt == 2:
-                raise
-            time.sleep(3)
-    rows = [{"date": row["date"], "prism": row.get("prism_precip_in"),
-             "mrms": row.get("mrms_precip_in")} for row in data.get("data", [])]
-    with open(path, "w") as f:
-        json.dump(rows, f)
-    time.sleep(0.5)                        # be a good citizen of a free service
-    return rows
-
-def iem_series(lat, lon, field, start, end):
-    rows = []
-    for year in range(start.year, end.year + 1):
-        rows.extend(iem_year(lat, lon, year, start, end))
-    return {"daily": {"time": [r["date"] for r in rows],
-                      "precipitation_sum": [(r[field] or 0.0) for r in rows]}}
-
-def era5_series(lat, lon, end):
-    return forecast.open_meteo_provider(lat, lon, end)
+def product_series(product, lat, lon, end):
+    """One product's daily series, with nulls read as 0.0 the way the engine reads
+    them -- the summing below is done here rather than inside build_precip_index,
+    and would trip over a None the engine would have absorbed."""
+    s = forecast.resolve_precip(PRODUCTS[product])(lat, lon, end)
+    return {"daily": {"time": list(s["daily"]["time"]),
+                      "precipitation_sum": [(v or 0.0)
+                                            for v in s["daily"]["precipitation_sum"]]}}
 
 def clip(series, since):
     if not since:
@@ -113,8 +92,10 @@ def grid_probe(lat, lon):
     print("  are NOT getting PRISM's or MRMS's native resolution from this endpoint.")
 
 def run_engine(sources, series_for, asof, product):
-    forecast.PRECIP_PROVIDER = lambda lat, lon, end, use_cache=True: series_for(product, lat, lon)
-    bases = [forecast.analyze_base(s, asof) for s in sources]
+    # Passed in rather than assigned to PRECIP_PROVIDER: the series here are the
+    # tool's cached-and-clipped ones, and a global would outlive this call.
+    provider = lambda lat, lon, end, use_cache=True: series_for(product, lat, lon)
+    bases = [forecast.analyze_base(s, asof, provider=provider) for s in sources]
     bases = [b for b in bases if b and b["n"] > 0]
     forecast.pool_controlled(bases, forecast.POOL_RADIUS_KM)
     return {r["name"]: r for r in (forecast.finalize(b) for b in bases)}
@@ -145,17 +126,12 @@ def main(argv):
         grid_probe(sources[0]["lat"], sources[0]["lon"])
         return 0
 
-    start = date.fromisoformat(forecast.PRECIP_START)
     end = min(asof, date.today() - timedelta(days=forecast.ERA5_LAG_DAYS))
     cache = {}
     def series_for(product, lat, lon):
         key = (product, round(lat, 5), round(lon, 5))
         if key not in cache:
-            if product == "ERA5":
-                s = era5_series(lat, lon, end)
-            else:
-                s = iem_series(lat, lon, product.lower(), start, end)
-            cache[key] = clip(s, since)
+            cache[key] = clip(product_series(product, lat, lon, end), since)
         return cache[key]
 
     print("fetching...", flush=True)

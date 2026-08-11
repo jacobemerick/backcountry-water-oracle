@@ -22,6 +22,13 @@ backend. Every fetch is cached under `.cache/iem/`, so re-runs are free and IEM
 gets asked once per coordinate-year (with a delay between requests — it's a free
 service).
 
+Since [#17] the tool does no fetching of its own: PRISM and MRMS are engine
+built-ins now (`--precip iem:prism` / `iem:mrms`) and this asks for them by name,
+so a bake-off can't end up measuring its own fetching alongside the products.
+Caching and the be-polite delay moved there with them. The refactor was checked
+against the cache the original run left behind — **0 differing days out of
+7,134** — so the findings below are unchanged.
+
 **`--since` matters for MRMS.** IEM serves MRMS values back to 2007, but the
 product is only genuine from ~2014; earlier values are a backfilled proxy. Pass
 `--since 2014-01-01` for an honest comparison.
@@ -41,8 +48,10 @@ is not a resolution upgrade over ERA5 (~9–11 km)** and cannot separate two spr
 across a ridge.
 
 **2. PRISM is not the monsoon fix. MRMS is.** On the 2014+ genuine window,
-Jun–Sep totals run ERA5 6.72"/yr, PRISM 8.02", **MRMS 13.98"**. On individual
-convective days PRISM misses cells right alongside ERA5:
+Jun–Sep totals run ERA5 6.72"/yr, PRISM 8.02", **MRMS 13.98"** (for a record
+ending 2026-07-30 — the per-year averages creep as the record grows, so re-runs
+land near these rather than on them; the ratio is the finding, not the digits).
+On individual convective days PRISM misses cells right alongside ERA5:
 
 ```
 date          ERA5   PRISM    MRMS

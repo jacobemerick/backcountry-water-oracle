@@ -36,6 +36,7 @@ python3 forecast.py sources.csv --asof 2026-08-15            # read for a future
 python3 forecast.py sources.csv --no-cache                    # force precip re-fetch
 python3 forecast.py area.csv --pool-radius 15                 # neighbor radius km (pooling)
 python3 forecast.py area.csv --no-pool                        # analyze each source alone
+python3 forecast.py az.csv --precip iem:mrms                  # a different precip product
 cat area.csv | python3 forecast.py -                          # read the CSV from stdin
 python3 forecast.py area.csv --json                           # machine-readable output
 ```
@@ -87,11 +88,14 @@ learned a new way to skip a source.
 
 ```python
 payload = forecast.run(sources, asof, harmonics=1, pool=True,
-                       pool_radius_km=25.0, use_cache=True,
+                       pool_radius_km=25.0, use_cache=True, precip=None,
                        notes=None, on_note=None)
 ```
 
-`asof` defaults to today. `notes` may be a list to append to — pre-seed it with
+`asof` defaults to today. `precip` names a built-in product (see
+[`--precip`](#choosing-a-precip-product---precip)); `None` means "whatever
+`PRECIP_PROVIDER` is", so a host that assigned its own callable keeps it.
+`notes` may be a list to append to — pre-seed it with
 anything that went wrong earlier (a rejected upload, say) and it appears in the
 payload. `on_note` is called with each note as it happens, for logging or
 streaming. Sources that can't be analysed become notes; they never raise.
@@ -153,8 +157,52 @@ provider(lat, lon, end_date, use_cache) -> {"daily": {
   wherever the module happens to be installed.
 
 No new dependency, no change to the CLI, and the engine stays sterile — it still
-only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backends
-(IEM PRISM/MRMS) will be providers on this same seam.
+only ever sees lat/lon + flow + precip.
+
+### Choosing a precip product (`--precip`)
+
+Assigning `PRECIP_PROVIDER` is for supplying *your own* backend. To pick one of
+the products the engine already ships, name it — on the CLI or in `run()`:
+
+```bash
+python3 forecast.py az.csv --precip iem:mrms
+```
+```python
+payload = forecast.run(sources, asof, precip="iem:mrms")
+```
+
+| name | product | coverage |
+|---|---|---|
+| `open-meteo` | **ERA5 reanalysis (the default)** | global |
+| `iem:prism` | PRISM via Iowa State's IEMRE point service | CONUS |
+| `iem:mrms` | MRMS radar via the same service | CONUS |
+
+Both `iem:*` providers are chunked by year and cached under `.cache/iem/`, and one
+download serves both products. **Set expectations from the bake-off**
+([`tools/`](tools/), [#17]) before reaching for them:
+
+- **This is not a resolution upgrade.** The IEMRE endpoint resamples every product
+  onto its own 0.125° (~11.6 km) grid, which is no finer than ERA5's ~9–11 km. Two
+  springs either side of a ridge still share a cell.
+- **The fit barely moves** — season-controlled *r* shifts <0.05, and no best window
+  or type changed on the worked example. What moves is the **as-of read**, because
+  MRMS sees convective cells the others miss (a 3.66" day that ERA5 read as 0.04"
+  and PRISM as 0.00"). That is worth a lot in monsoon season and nothing at all to
+  the historical fit — which is why [#18] proposes MRMS as a *cross-check beside*
+  the ERA5 model rather than a replacement for it.
+- **MRMS is only genuine radar from ~2014**; earlier values are a backfilled proxy,
+  and `--precip iem:mrms` fits the model across both. The engine says so in a
+  `caveat` note on every such run.
+
+Two rules the flag holds to. A product that can't serve a coordinate is an
+**error for that source** — never a silent substitution, because a payload that
+said `iem:prism` while ERA5 quietly answered would be worse than either outcome.
+The rest of the sources still run, and the failure lands in `notes` as a `kind:
+"error"`. And `params.precip` records what actually answered, so two stored
+forecasts are only comparable when it matches — the same rule as
+`params.engine_version`. A host whose own provider serves ERA5 from its own store
+can say so with `my_provider.precip_name = "open-meteo"` and keep its payloads
+comparable with everyone else's.
 
 ## Tests
 
@@ -162,7 +210,7 @@ only ever sees lat/lon + flow + precip. The planned pluggable `--precip` backend
 python3 tests/test_forecast.py
 ```
 
-131 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+159 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
@@ -188,6 +236,7 @@ bump and a changelog entry:
 | `load_sources(paths)` / `load_sources_from(streams, labels)` | the two loaders |
 | `analyze(src, asof, …)` | single source, no pooling |
 | `PRECIP_PROVIDER`, `open_meteo_provider(…)`, `CACHE_DIR` | the precip seam |
+| `PRECIP_PROVIDERS`, `resolve_precip(name)`, `precip_name(provider)` | the named built-ins, and what a payload calls them |
 | the **`--json` payload** | every key and its meaning |
 | the **CLI** | flags, `-`/stdin, exit codes (`0` ok, `1` no input, `2` bad input) |
 | `__version__` | also `--version`, also `params.engine_version` in the payload |
@@ -211,6 +260,10 @@ Those changes go in the changelog, and every payload carries
 it. If you need two forecasts to be comparable, check that field: same version
 means the method didn't move underneath you, and different versions mean it may
 have.
+
+**Check `params.precip` alongside it.** Same method, different rain, different
+answer — the bake-off flipped the verdict on all three Mazatzal sources purely by
+changing the product. Two forecasts are comparable when *both* fields match.
 
 ## The input contract (CSV schema)
 
@@ -255,7 +308,8 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
 ```jsonc
 {
   "asof": "2026-07-13",
-  "params": { "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
+  "params": { "engine_version": "0.1.0", "precip": "open-meteo",
+              "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
               "cache": true, "windows": [30, 60, 90, 180, 270, 365] },
   "sources": [{
     "name": "Castersen Seep", "lat": 34.09059, "lon": -111.46653,
@@ -279,7 +333,9 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
     "predicted_flow": 0.12, "verdict": "Marginal - pools/dripping at best",
     "harmonics": 1
   }],
-  "notes": []   // [{kind: "skip"|"error", source, message}, ...]
+  "notes": []   // [{kind: "skip"|"error"|"caveat", source, message}, ...]
+                // caveat = a limitation of the run itself (source is null),
+                // e.g. --precip iem:mrms fitting across pre-2014 backfill
 }
 ```
 
@@ -339,7 +395,9 @@ its neighbors and gets rescued onto the rain window they validate, while buffere
    winter-recharge signal; for a summer "did a storm just hit" call, still check
    radar — [MRMS via IEM](https://mesonet.agron.iastate.edu/) or the
    [NWS AHPS precip analysis](https://water.weather.gov/precip/). This is the
-   *base rate*; radar is *this week*.
+   *base rate*; radar is *this week*. `--precip iem:mrms` will fit the whole model
+   on radar instead, but that trades one problem for another (pre-2014 backfill in
+   the analog pool) — reading radar *beside* the ERA5 model is [#18].
 2. **Season and rain are entangled** — more reports in wet, cool months. The tool
    controls for this: it removes the day-of-year cycle (annual-harmonic
    regression, learned per-site so it's hemisphere-correct) and reports a
@@ -364,11 +422,15 @@ Shipped:
       push and PR across Python 3.9–3.14. See [Tests](#tests).
 - [x] **Installable package** ([#26]) — `pip install`, a `water-forecast` command,
       and a declared public surface so embedders pin instead of vendoring.
+- [x] **Pluggable precip product** ([#17]) — `--precip {open-meteo,iem:prism,iem:mrms}`,
+      ERA5 still the default. The bake-off that reshaped this issue found it is *not*
+      a resolution upgrade; see [`--precip`](#choosing-a-precip-product---precip).
 
 Planned — the issue is where the detail and the open questions live:
 
-- [ ] **Higher-res precip** — pluggable `--precip` with an IEM PRISM (4 km) backend
-      ([#17]), then MRMS 1 km radar as a monsoon cross-check ([#18]).
+- [ ] **MRMS radar cross-check** ([#18]) — report radar for the recent window beside
+      the ERA5 fit, rather than refitting the model on it. The one the bake-off
+      says is worth building.
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
 - [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
 - [ ] **Zero-report mode** — antecedent-rain percentile against a site's own

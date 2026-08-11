@@ -61,6 +61,11 @@ def fixture_provider(lat, lon, end_date, use_cache=True):
     is documented to trim, and every test run leans on that being true."""
     return load_fixture_series(lat, lon)
 
+# What it serves is recorded ERA5 -- a different transport, not a different
+# product -- so it says so, and every payload here is stamped the way a real run
+# would be instead of naming this function (#17).
+fixture_provider.precip_name = "open-meteo"
+
 def _no_network(*a, **k):
     raise AssertionError("test attempted a network call")
 
@@ -468,6 +473,244 @@ class TestPrecipProvider(OfflineTestCase):
         far_future = date.today() + timedelta(days=365)
         forecast.analyze(source(reports=[(date(2024, 1, 1), 1.0)]), far_future)
         self.assertLessEqual(seen[0], date.today() - timedelta(days=forecast.ERA5_LAG_DAYS))
+
+
+# =========================================================================== #
+# Choosing a product by name -- issue #17
+# =========================================================================== #
+class TestPrecipSelection(OfflineTestCase):
+    """--precip / run(precip=...) select among the built-ins; ERA5 stays default."""
+    def test_the_registry_has_the_documented_names(self):
+        self.assertEqual(sorted(forecast.PRECIP_PROVIDERS),
+                         ["iem:mrms", "iem:prism", "open-meteo"])
+        self.assertEqual(forecast.DEFAULT_PRECIP, "open-meteo")
+
+    def test_the_default_is_still_era5(self):
+        """The one guarantee the issue makes about this whole change."""
+        self.assertIs(forecast.PRECIP_PROVIDERS[forecast.DEFAULT_PRECIP],
+                      forecast.open_meteo_provider)
+
+    def test_resolve_returns_the_callable(self):
+        self.assertIs(forecast.resolve_precip("iem:mrms"), forecast.iem_mrms_provider)
+
+    def test_resolve_lists_what_it_knows(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.resolve_precip("prism")           # nearly right, still wrong
+        for name in forecast.PRECIP_PROVIDERS:
+            self.assertIn(name, str(cm.exception))
+
+    def test_run_selects_the_named_provider(self):
+        seen = []
+        def fake(lat, lon, end_date, use_cache=True):
+            seen.append((lat, lon))
+            return load_fixture_series(lat, lon)
+        forecast.PRECIP_PROVIDERS["test:fake"] = fake
+        try:
+            payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF,
+                                   precip="test:fake")
+        finally:
+            del forecast.PRECIP_PROVIDERS["test:fake"]
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(payload["params"]["precip"], "test:fake")
+
+    def test_selecting_a_product_does_not_mutate_the_global(self):
+        """Threaded through the call chain, not swapped into PRECIP_PROVIDER for
+        the length of the run -- two concurrent requests must not cross rain."""
+        forecast.PRECIP_PROVIDERS["test:fake"] = fixture_provider
+        try:
+            forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF, precip="test:fake")
+        finally:
+            del forecast.PRECIP_PROVIDERS["test:fake"]
+        self.assertIs(forecast.PRECIP_PROVIDER, fixture_provider)
+
+    def test_no_selection_leaves_an_injected_provider_alone(self):
+        """A host that assigned PRECIP_PROVIDER keeps it, through run() and the CLI."""
+        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        self.assertEqual(len(payload["sources"]), 3)          # the fixture answered
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(len(json.loads(out)["sources"]), 3)
+
+    def test_an_unknown_product_is_rejected_before_anything_is_fetched(self):
+        calls = []
+        forecast.PRECIP_PROVIDER = lambda *a, **k: calls.append(1)
+        code, out, err = run_cli([EXAMPLE_CSV, "--precip", "iem:prims"])
+        self.assertEqual(code, 2)
+        self.assertIn("[error]", err)
+        self.assertIn("iem:mrms", err)                        # tells you the real names
+        self.assertEqual(calls, [])
+
+    def test_run_rejects_an_unknown_product(self):
+        with self.assertRaises(ValueError):
+            forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF, precip="nope")
+
+    # -- what the payload says answered ------------------------------------- #
+    def test_a_built_in_is_named_by_its_registry_key(self):
+        self.assertEqual(forecast.precip_name(forecast.open_meteo_provider), "open-meteo")
+        self.assertEqual(forecast.precip_name(forecast.iem_prism_provider), "iem:prism")
+
+    def test_a_host_callable_is_never_mislabelled_as_era5(self):
+        def my_provider(lat, lon, end_date, use_cache=True): ...
+        self.assertEqual(forecast.precip_name(my_provider), "my_provider")
+
+    def test_a_provider_may_declare_the_product_it_serves(self):
+        """ERA5 out of the host's own store is still ERA5 -- and stays comparable."""
+        def from_postgres(lat, lon, end_date, use_cache=True): ...
+        from_postgres.precip_name = "open-meteo"
+        self.assertEqual(forecast.precip_name(from_postgres), "open-meteo")
+
+    def test_the_payload_is_stamped_with_what_answered(self):
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(json.loads(out)["params"]["precip"], "open-meteo")
+
+    # -- the caveat that rides along with a product -------------------------- #
+    def test_mrms_warns_that_the_early_record_is_not_radar(self):
+        notes = []
+        forecast._analyse([], ASOF, True, 1, True, 25.0,
+                          lambda k, m, n=None: notes.append((k, m)),
+                          forecast.iem_mrms_provider)
+        self.assertEqual([k for k, _ in notes], ["caveat"])
+        self.assertIn("2014", notes[0][1])
+
+    def test_the_default_product_has_nothing_to_caveat(self):
+        notes = []
+        forecast._analyse([], ASOF, True, 1, True, 25.0,
+                          lambda k, m, n=None: notes.append((k, m)),
+                          forecast.open_meteo_provider)
+        self.assertEqual(notes, [])
+
+    def test_the_caveat_reaches_the_payload(self):
+        forecast.PRECIP_PROVIDER = forecast.iem_prism_provider
+        payload = forecast.run([], ASOF)
+        self.assertEqual(payload["notes"][0]["kind"], "caveat")
+        self.assertIsNone(payload["notes"][0]["source"])       # a run-wide fact
+
+    def test_the_summary_footer_stops_claiming_era5(self):
+        """The standing 'ERA5 misses monsoon cells' line is false under --precip."""
+        rows = forecast._analyse(forecast.load_sources([EXAMPLE_CSV]), ASOF, True, 1,
+                                 True, 25.0, lambda *a: None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            forecast.print_table(rows, "iem:mrms")
+        self.assertIn("iem:mrms", out.getvalue())
+        self.assertNotIn("Reminder: ERA5", out.getvalue())
+
+
+class TestIemProvider(unittest.TestCase):
+    """The IEM built-ins: CONUS-only, year-chunked, cached (issue #17)."""
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self._cache_dir, self._urlopen = forecast.CACHE_DIR, urllib.request.urlopen
+        self._start = forecast.PRECIP_START
+        self._pause = forecast.IEM_PAUSE_S
+        forecast.CACHE_DIR = self.tmp
+        forecast.PRECIP_START = "2024-01-01"        # keep the fixture years small
+        forecast.IEM_PAUSE_S = 0                    # no politeness sleep in tests
+        self.fetched = []
+
+        def stub(url, timeout=0):
+            self.fetched.append(url)
+            d1, d2 = (date.fromisoformat(p) for p in url.split("/multiday/")[1].split("/")[:2])
+            rows = [{"date": (d1 + timedelta(days=i)).isoformat(),
+                     "prism_precip_in": round((i % 11) * 0.01, 3),
+                     "mrms_precip_in": round((i % 7) * 0.02, 3)}
+                    for i in range((d2 - d1).days + 1)]
+            return io.BytesIO(json.dumps({"data": rows}).encode())
+        urllib.request.urlopen = stub
+
+    def tearDown(self):
+        forecast.CACHE_DIR, urllib.request.urlopen = self._cache_dir, self._urlopen
+        forecast.PRECIP_START, forecast.IEM_PAUSE_S = self._start, self._pause
+
+    def test_outside_conus_is_an_error_not_a_silent_fallback(self):
+        """The whole point: you asked for PRISM, you get PRISM or you get told."""
+        for lat, lon, where in [(46.8, 8.2, "the Alps"), (-33.9, 18.4, "Cape Town")]:
+            with self.subTest(where):
+                with self.assertRaises(ValueError) as cm:
+                    forecast.iem_prism_provider(lat, lon, date(2024, 6, 1))
+                self.assertIn("CONUS", str(cm.exception))
+        self.assertEqual(self.fetched, [])           # and it never asked the service
+
+    def test_a_bad_coordinate_skips_one_source_and_spares_the_rest(self):
+        payload = forecast.run(
+            [source("Swiss", 46.8, 8.2, [(date(2024, 6, 1), 1.0)])],
+            date(2024, 8, 1), precip="iem:prism")
+        self.assertEqual(payload["sources"], [])
+        errs = [n for n in payload["notes"] if n["kind"] == "error"]
+        self.assertEqual(errs[0]["source"], "Swiss")
+        self.assertIn("CONUS", errs[0]["message"])
+        # ...and nothing anywhere claims ERA5 quietly stepped in
+        self.assertEqual(payload["params"]["precip"], "iem:prism")
+
+    def test_nulls_across_the_whole_record_are_no_coverage_not_a_dry_site(self):
+        def empty(url, timeout=0):
+            d1, d2 = (date.fromisoformat(p) for p in url.split("/multiday/")[1].split("/")[:2])
+            return io.BytesIO(json.dumps({"data": [
+                {"date": (d1 + timedelta(days=i)).isoformat(),
+                 "prism_precip_in": None, "mrms_precip_in": None}
+                for i in range((d2 - d1).days + 1)]}).encode())
+        urllib.request.urlopen = empty
+        with self.assertRaises(ValueError) as cm:
+            forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        self.assertIn("no data", str(cm.exception))
+
+    def test_series_is_chunked_by_year_and_starts_at_precip_start(self):
+        s = forecast.iem_mrms_provider(34.09, -111.47, date(2025, 3, 5))
+        self.assertEqual(len(self.fetched), 2)                  # 2024 and 2025
+        self.assertEqual(s["daily"]["time"][0], "2024-01-01")
+        self.assertEqual(s["daily"]["time"][-1], "2025-03-05")
+        self.assertEqual(len(s["daily"]["time"]), len(s["daily"]["precipitation_sum"]))
+
+    def test_both_products_come_from_one_download(self):
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        n = len(self.fetched)
+        mrms = forecast.iem_mrms_provider(34.09, -111.47, date(2024, 6, 1))
+        self.assertEqual(len(self.fetched), n)                  # served from cache
+        prism = forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        self.assertNotEqual(mrms["daily"]["precipitation_sum"],
+                            prism["daily"]["precipitation_sum"])
+
+    def test_a_cached_year_is_not_refetched(self):
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 12, 31))
+        n = len(self.fetched)
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 12, 31))
+        self.assertEqual(len(self.fetched), n)
+
+    def test_a_part_year_cache_is_refetched_when_more_is_asked_for(self):
+        """The current year is cached mid-flight; trusting the file's existence
+        would silently truncate every window reaching past what it holds."""
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        n = len(self.fetched)
+        s = forecast.iem_prism_provider(34.09, -111.47, date(2024, 9, 1))
+        self.assertEqual(len(self.fetched), n + 1)
+        self.assertEqual(s["daily"]["time"][-1], "2024-09-01")
+
+    def test_no_cache_bypasses_the_cache(self):
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        n = len(self.fetched)
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1), use_cache=False)
+        self.assertEqual(len(self.fetched), n + 1)
+
+    def test_an_unreadable_cache_file_is_a_miss_not_a_crash(self):
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        with open(forecast._iem_cache_path(34.09, -111.47, 2024), "w") as f:
+            f.write("{not json")
+        n = len(self.fetched)
+        forecast.iem_prism_provider(34.09, -111.47, date(2024, 6, 1))
+        self.assertEqual(len(self.fetched), n + 1)
+
+    def test_cache_key_rounds_like_the_era5_one(self):
+        p = forecast._iem_cache_path(34.087161, -111.452934, 2024)
+        self.assertEqual(os.path.basename(p), "34.09_-111.45_2024.json")
+        self.assertEqual(os.path.basename(os.path.dirname(p)), "iem")
+
+    def test_the_series_satisfies_the_provider_contract(self):
+        """Whatever it returns has to survive the same seam a host's does."""
+        src = source(lat=34.09, lon=-111.47, reports=[(date(2024, 6, 1), 1.0),
+                                                      (date(2024, 9, 1), 0.0)])
+        a = forecast.analyze(src, date(2025, 3, 5), provider=forecast.iem_mrms_provider)
+        self.assertIsNotNone(a)
+        self.assertEqual(a["n"], 2)
 
 
 class TestPrecipCache(unittest.TestCase):
@@ -1072,6 +1315,7 @@ class TestRun(OfflineTestCase):
         payload = forecast.run(self.sources(), ASOF, pool=False, harmonics=2,
                                pool_radius_km=15.0, use_cache=False)
         self.assertEqual(payload["params"], {"engine_version": forecast.__version__,
+                                             "precip": "open-meteo",
                                              "pool": False, "pool_radius_km": 15.0,
                                              "harmonics": 2, "cache": False,
                                              "windows": forecast.WINDOWS})

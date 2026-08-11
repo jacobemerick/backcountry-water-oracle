@@ -65,8 +65,13 @@ a new input format — adapt the input to the schema instead.
    keeping: the user can rerun and tweak it.)
 
    If the engine writes anything to **stderr**, or `notes` is non-empty, say so —
-   those are sources that were skipped or failed, and silence would read as
-   "all good". `notes[].kind` is `skip` or `error`.
+   silence would read as "all good". `notes[].kind` is:
+   - `skip` / `error` — a source that was dropped or blew up (`notes[].source`
+     names it). Relay which source, and why.
+   - `caveat` — a limitation of the *run*, not of any one source
+     (`notes[].source` is null), e.g. `--precip iem:mrms` fitting the model
+     across pre-2014 backfill. Pass it on in your own words; it's a reason to
+     trust the answer less, and the user can't see it unless you say it.
 
 6. **Show the user the engine's own report too**, when they'd want the table:
    rerun the same command without `--json` and show that output verbatim. Precip
@@ -98,6 +103,26 @@ a new input format — adapt the input to the schema instead.
    Always relay the ERA5/monsoon caveat for any summer (Jun–Sep AZ) go/no-go: the
    model is the base rate, not "this week" — cross-check radar (MRMS via IEM, or
    NWS AHPS precip) before committing.
+
+## Precip products (`--precip`) — leave it alone by default
+
+The engine can fit on products other than ERA5: `--precip iem:prism` or
+`iem:mrms` (CONUS only; `params.precip` in the JSON records which one answered).
+
+**Default to not passing it.** ERA5 is the default for good reasons and the
+bake-off found the *fit* barely moves between products — season-controlled r
+shifts <0.05, no window or type changes. What moves is the as-of read, enough to
+flip verdicts. So a second product is a way to ask "how load-bearing is this
+call?", not a better answer:
+
+- If a user is making a **summer go/no-go** and wants the radar view, re-run with
+  `--precip iem:mrms` and present it **beside** the ERA5 answer, never instead of
+  it — MRMS is backfilled proxy before ~2014, so its historical fit is mixed. Say
+  which number came from which product.
+- Never compare a stored/earlier forecast against a new one unless
+  `params.precip` matches on both. Same for `params.engine_version`.
+- Outside CONUS the `iem:*` products fail that source with an `error` note rather
+  than quietly substituting ERA5 — if you see that, just re-run without the flag.
 
 ## Scoring rubric (0.0 – 1.0)
 

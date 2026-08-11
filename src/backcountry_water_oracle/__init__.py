@@ -27,6 +27,7 @@ Usage:
     python3 forecast.py sources.csv --no-cache          # force precip re-fetch
     python3 forecast.py area.csv --pool-radius 15       # neighbor radius km (pooling)
     python3 forecast.py area.csv --no-pool              # analyze each source alone
+    python3 forecast.py az.csv --precip iem:mrms        # a different precip product
     cat area.csv | python3 forecast.py -                # read the CSV from stdin
     python3 forecast.py area.csv --json                 # machine-readable output
 
@@ -55,12 +56,16 @@ PIPING IT AROUND:
     collected under "notes", so stdout stays valid JSON.
 
 Pure standard library -- zero runtime dependencies, installed or not.
-Precip: Open-Meteo ERA5 archive (free).
+Precip: Open-Meteo ERA5 archive (free) by default; --precip picks another product.
 
 TRUST IT THIS MUCH:
   * ERA5 precip is ~9-11 km grid -> it SMOOTHS/MISSES isolated monsoon cells.
     Trust the winter-recharge signal; for a summer "did a storm just hit" call,
     still eyeball radar (MRMS / AHPS). This gives the base rate, not this week.
+  * --precip swaps the product the WHOLE run is fit on (PRECIP_PROVIDERS below has
+    what the bake-off found: the fit barely moves, the as-of read moves a lot).
+    Two forecasts are only comparable if params.precip matches, the same way
+    params.engine_version has to.
   * Season and rain are entangled (more reports in wet, cool months). The tool
     removes the day-of-year cycle (annual-harmonic regression, learned from each
     site's own precip so it's hemisphere-correct anywhere) and reports a
@@ -78,7 +83,7 @@ TRUST IT THIS MUCH:
     turns it off. Only the correlation is pooled -- %-dry and the flow numbers
     stay each source's own.
 """
-import bisect, csv, json, math, os, sys, urllib.request
+import bisect, csv, json, math, os, sys, time, urllib.request
 from datetime import date, timedelta
 
 # Single source of truth: pyproject.toml reads this attribute, so the package
@@ -256,6 +261,16 @@ def load_sources(paths):
 #     provider(lat, lon, end_date, use_cache) -> {"daily": {"time": [ISO...],
 #                                                 "precipitation_sum": [inches...]}}
 #
+# There are two ways to choose one, and they answer different questions:
+#
+#   * A BUILT-IN, by name -- `--precip iem:mrms`, or run(..., precip="iem:mrms").
+#     PRECIP_PROVIDERS below is the registry; open-meteo (ERA5) is the default and
+#     stays the default. This is for "same engine, different product", and the
+#     product that actually answered is stamped into params.precip so a stored
+#     payload says which one it was.
+#   * A CALLABLE, by assignment -- PRECIP_PROVIDER = my_provider. This is for a
+#     host supplying its own storage or its own data entirely.
+#
 # The default provider fetches Open-Meteo's ERA5 archive and caches it under
 # CACHE_DIR. An embedding host (a web app on serverless, say) that needs the
 # series in a shared store instead can assign its own callable:
@@ -276,6 +291,9 @@ def load_sources(paths):
 #     fine (the engine trims), which lets a host keep one series per coordinate
 #     and serve every as-of date from it.
 #   * `use_cache=False` means "the caller wants fresh data" -- bypass your cache.
+#   * Raise ValueError with a sentence a user can act on when you cannot serve a
+#     coordinate at all. The engine turns that into a per-source [error] note and
+#     carries on with the other sources; it never substitutes another product.
 # --------------------------------------------------------------------------- #
 def _open_meteo_url(lat, lon, end_date):
     return ("https://archive-api.open-meteo.com/v1/archive"
@@ -326,7 +344,158 @@ def open_meteo_provider(lat, lon, end_date, use_cache=True):
         json.dump(data, f)
     return data
 
-PRECIP_PROVIDER = open_meteo_provider
+# --------------------------------------------------------------------------- #
+# The other built-in: Iowa State's IEMRE point service, which serves PRISM
+# (gauge-interpolated) and MRMS (radar) alongside each other. CONUS only.
+#
+# What tools/precip_bakeoff.py found, because it decides how much to expect:
+#   * This endpoint resamples EVERY product onto the IEMRE grid (0.125 deg,
+#     ~11.6 km), so it is NOT a resolution upgrade over ERA5's ~9-11 km. Two
+#     springs either side of a ridge still share a cell.
+#   * The fit barely notices the product (season-controlled r moves <0.05; no best
+#     window or type changed on the worked example). The AS-OF READ moves a lot,
+#     because MRMS sees convective cells ERA5 and PRISM both miss -- a 3.66" day
+#     read as 0.04" by ERA5 and 0.00" by PRISM. That is the reason to reach for
+#     this, and #18 is where it gets used properly (as a cross-check beside the
+#     ERA5 fit, rather than by refitting the whole model on radar).
+# --------------------------------------------------------------------------- #
+IEM_MULTIDAY = ("https://mesonet.agron.iastate.edu/iemre/multiday"
+                "/{d1}/{d2}/{lat}/{lon}/json")
+# The IEMRE domain, near enough. Checked BEFORE the network call so a source in
+# the Alps is told what is wrong in one sentence, rather than being handed 19
+# years of nulls that would read downstream as "it never rained there".
+IEM_LAT_RANGE = (23.0, 51.0)
+IEM_LON_RANGE = (-126.0, -65.0)
+IEM_PAUSE_S = 0.5        # between requests -- it is a free service, chunked by year
+IEM_RETRIES = 3
+
+def _iem_cache_path(lat, lon, year):
+    """One file per rounded coordinate-YEAR, holding every product that year.
+
+    Chunked by year rather than by span because the service is asked for a date
+    range: one file per (coordinate, year) is the largest chunk that a later run
+    can reuse unchanged. Rounded to 2dp like _cache_path, for the same reason --
+    it is far finer than the ~11.6 km grid actually being served, so two sources a
+    few hundred metres apart share the download they would have shared anyway.
+
+    Both products land in the same file: the endpoint returns them together, so
+    storing one and discarding the other would mean fetching the same year twice
+    to answer --precip iem:prism and then --precip iem:mrms."""
+    return os.path.join(CACHE_DIR, "iem", f"{round(lat,2)}_{round(lon,2)}_{year}.json")
+
+def _iem_year(lat, lon, year, start, end, use_cache=True):
+    """One coordinate-year as [{"date", "prism", "mrms"}, ...], cached on disk."""
+    d1 = max(date(year, 1, 1), start)
+    d2 = min(date(year, 12, 31), end)
+    cpath = _iem_cache_path(lat, lon, year)
+    if use_cache and os.path.exists(cpath):
+        try:
+            with open(cpath) as f:
+                rows = json.load(f)
+            # The CURRENT year is cached mid-flight, so "the file exists" is not
+            # enough -- a file written last week stops before today and would
+            # quietly truncate every antecedent window reaching into the gap.
+            # Trust it only when it actually spans what was asked for.
+            if rows and rows[0]["date"] <= d1.isoformat() and rows[-1]["date"] >= d2.isoformat():
+                return rows
+        except (ValueError, KeyError, TypeError):
+            pass                                       # unreadable cache -> refetch
+    url = IEM_MULTIDAY.format(d1=d1.isoformat(), d2=d2.isoformat(), lat=lat, lon=lon)
+    for attempt in range(IEM_RETRIES):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                data = json.load(r)
+            break
+        except Exception:
+            if attempt == IEM_RETRIES - 1:
+                raise
+            time.sleep(3)
+    rows = [{"date": row["date"], "prism": row.get("prism_precip_in"),
+             "mrms": row.get("mrms_precip_in")} for row in data.get("data", [])]
+    os.makedirs(os.path.dirname(cpath), exist_ok=True)
+    with open(cpath, "w") as f:
+        json.dump(rows, f)
+    time.sleep(IEM_PAUSE_S)                  # be a good citizen of a free service
+    return rows
+
+def _iem_provider(field, label, caveat=None):
+    """Build a provider that reads one IEMRE field. See PRECIP_PROVIDERS below."""
+    def provider(lat, lon, end_date, use_cache=True):
+        if not (IEM_LAT_RANGE[0] <= lat <= IEM_LAT_RANGE[1]
+                and IEM_LON_RANGE[0] <= lon <= IEM_LON_RANGE[1]):
+            raise ValueError(
+                f"{label} covers CONUS only, and ({lat:.5f}, {lon:.5f}) is outside "
+                "it. Re-run without --precip (Open-Meteo ERA5 is global).")
+        start = date.fromisoformat(PRECIP_START)
+        rows = []
+        for year in range(start.year, end_date.year + 1):
+            rows.extend(_iem_year(lat, lon, year, start, end_date, use_cache))
+        vals = [r[field] for r in rows]
+        # Inside the bounding box but outside the grid (offshore, over the border)
+        # the service answers with nulls rather than an error. Nineteen years of
+        # them is not a dry site, it is no coverage -- say so instead of fitting a
+        # model to a flat zero.
+        if all(v is None for v in vals):
+            raise ValueError(
+                f"{label} has no data for ({lat:.5f}, {lon:.5f}) -- inside the "
+                "service's bounding box but outside its grid. Re-run without "
+                "--precip (Open-Meteo ERA5 is global).")
+        return {"daily": {"time": [r["date"] for r in rows],
+                          "precipitation_sum": vals}}
+    provider.__name__ = f"iem_{field}_provider"
+    provider.caveat = caveat
+    return provider
+
+iem_prism_provider = _iem_provider(
+    "prism", "PRISM (IEM)",
+    "PRISM is gauge-interpolated: where no gauge sat under a convective cell it "
+    "has nothing to interpolate from, and reads 0.00\" for a storm that happened.")
+iem_mrms_provider = _iem_provider(
+    "mrms", "MRMS (IEM)",
+    "MRMS is genuine radar only from ~2014; earlier values are a backfilled proxy. "
+    "This run fits the model across both, so the historical record and the "
+    "nearest-analog pool mix radar with proxy.")
+
+# The named built-ins, for --precip and run(precip=...). Adding an entry here is
+# all a new product needs; the CLI, the JSON stamp and the error messages read it.
+PRECIP_PROVIDERS = {
+    "open-meteo": open_meteo_provider,
+    "iem:prism":  iem_prism_provider,
+    "iem:mrms":   iem_mrms_provider,
+}
+DEFAULT_PRECIP = "open-meteo"
+
+PRECIP_PROVIDER = PRECIP_PROVIDERS[DEFAULT_PRECIP]
+
+def resolve_precip(name):
+    """A built-in's name -> its provider callable. Raises ValueError on an unknown
+    name, listing what there is."""
+    try:
+        return PRECIP_PROVIDERS[name]
+    except (KeyError, TypeError):
+        raise ValueError(f"unknown precip provider {name!r}. Known: "
+                         + ", ".join(sorted(PRECIP_PROVIDERS)))
+
+def precip_name(provider):
+    """The reverse: what to call the provider that actually answered, for
+    params.precip.
+
+    A host's own callable isn't in the registry, so it falls back to the function's
+    name -- the payload must never claim ERA5 answered when something else did. But
+    "not in the registry" and "not ERA5" are different things: a host that keeps
+    ERA5 in Postgres has swapped the TRANSPORT, not the product, and its payloads
+    should still say open-meteo so they stay comparable with everyone else's. Such
+    a provider says so by setting the attribute:
+
+        my_provider.precip_name = "open-meteo"   # ERA5, just from our own store
+    """
+    declared = getattr(provider, "precip_name", None)
+    if declared:
+        return declared
+    for name, p in PRECIP_PROVIDERS.items():
+        if p is provider:
+            return name
+    return getattr(provider, "__name__", None) or "custom"
 
 def _check_daily(data, who):
     """Fail loudly, at the seam, on a provider that returns the wrong shape --
@@ -344,9 +513,13 @@ def _check_daily(data, who):
         raise ValueError(f"{who} returned an empty series")
     return data
 
-def fetch_precip(lat, lon, end_date, use_cache=True):
-    """Get the daily precip series from the active provider (see PRECIP_PROVIDER)."""
-    provider = PRECIP_PROVIDER
+def fetch_precip(lat, lon, end_date, use_cache=True, provider=None):
+    """Get the daily precip series from `provider`, defaulting to PRECIP_PROVIDER.
+
+    Passed down the call chain rather than swapped into the global for the length
+    of a run: a host serving two requests on two threads may well want two
+    different products, and a global would hand one request the other's rain."""
+    provider = provider or PRECIP_PROVIDER
     who = f"precip provider {getattr(provider, '__name__', provider)!r}"
     data = _check_daily(provider(lat, lon, end_date, use_cache), who)
     # Trim here too, not just in the built-in: a host is allowed to keep one long
@@ -577,7 +750,7 @@ def running_phrase(pred):
     if pred < 0.70: return "Likely flowing (moderate)"
     return "Likely flowing well"
 
-def analyze_base(src, asof, use_cache=True, n_harm=1):
+def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None):
     """Per-source pass: precip -> raw + season-controlled per-window r vectors, plus
     the machinery finalize() needs. Stops BEFORE choosing a best window, so pooling
     can adjust the controlled r first. `pooled_ctrl` starts equal to the source's own
@@ -587,7 +760,8 @@ def analyze_base(src, asof, use_cache=True, n_harm=1):
     when nothing the source reported falls inside the precip record, so the caller
     can say WHY it is skipping rather than just that it did."""
     data = fetch_precip(src["lat"], src["lon"],
-                        min(asof, date.today() - timedelta(days=ERA5_LAG_DAYS)), use_cache)
+                        min(asof, date.today() - timedelta(days=ERA5_LAG_DAYS)),
+                        use_cache, provider)
     idx = build_precip_index(data)
     recs = [(d, s) for d, s in src["reports"] if idx["first"] < d <= idx["last"]]
     dates = [d for d, _ in recs]
@@ -650,10 +824,12 @@ def finalize(b):
             "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": b["n_harm"],
             "by_month": b["by_month"]}
 
-def analyze(src, asof, use_cache=True, n_harm=1):
+def analyze(src, asof, use_cache=True, n_harm=1, provider=None):
     """Single-source convenience (no pooling): base pass then finalize.
-    None when the source has nothing inside the precip record (see excluded_note)."""
-    b = analyze_base(src, asof, use_cache, n_harm)
+    None when the source has nothing inside the precip record (see excluded_note).
+    `provider` overrides PRECIP_PROVIDER for this call; resolve_precip() turns one
+    of the built-in names into one."""
+    b = analyze_base(src, asof, use_cache, n_harm, provider)
     return None if b is None or b["n"] == 0 else finalize(b)
 
 def excluded_note(a):
@@ -705,7 +881,7 @@ def print_source(a):
     print(f"  VERDICT: {running_phrase(a['pred'])}"
           + ("   [small n - weak confidence]" if a['n'] < 25 else ""))
 
-def print_table(rows):
+def print_table(rows, precip=DEFAULT_PRECIP):
     print(f"\n{'='*74}\nSUMMARY  (most reliable first)\n")
     rows = sorted(rows, key=lambda a: a["pct_dry"])
     h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}{'POOL':>6}   {'AS-OF READ'}"
@@ -719,7 +895,14 @@ def print_table(rows):
     print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
     print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
     print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
-    print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
+    # The standing monsoon caveat is about ERA5 specifically, so it stops being
+    # true the moment --precip picks something else -- say which product answered
+    # instead, and let the [caveat] note above carry that product's own limits.
+    if precip == DEFAULT_PRECIP:
+        print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
+    else:
+        print(f"Precip: {precip}, NOT the default ERA5 -- see the [caveat] above, and")
+        print("don't compare these numbers against a run made with another product.")
 
 # --------------------------------------------------------------------------- #
 # JSON output: the same numbers the text report shows, for a consumer instead of
@@ -766,20 +949,29 @@ def source_json(a):
         "harmonics": a["n_harm"],
     }
 
-def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache):
+def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
+             precip=DEFAULT_PRECIP):
     """One object on stdout. Sources stay in input order -- sort client-side."""
     return {
         "asof": asof.isoformat(),
         # engine_version is here because a stored payload outlives the code that
         # made it. When one seep reads differently two months apart, this is what
         # separates "the seep changed" from "the method changed" -- and the method
-        # HAS changed verdicts before, at identical input.
-        "params": {"engine_version": __version__,
+        # HAS changed verdicts before, at identical input. `precip` is there for
+        # the same reason one level down: same method, different rain, different
+        # answer. Comparing two forecasts means checking both.
+        "params": {"engine_version": __version__, "precip": precip,
                    "pool": do_pool, "pool_radius_km": radius_km,
                    "harmonics": n_harm, "cache": use_cache, "windows": WINDOWS},
         "sources": [source_json(a) for a in rows],
         "notes": notes,
     }
+
+def _precip_arg(s):
+    """Validate --precip at parse time, so an unknown product fails before ~19
+    years of the WRONG one have been downloaded."""
+    resolve_precip(s)
+    return s
 
 # Flags that take a value, as {flag: (option key, parser, what it wants)}. The
 # parser is what turns the string into the option, and its name is what the user
@@ -788,6 +980,8 @@ _VALUE_FLAGS = {
     "--asof":        ("asof",      date.fromisoformat, "an ISO date, e.g. 2026-08-15"),
     "--harmonics":   ("n_harm",    int,                "a whole number, e.g. 1"),
     "--pool-radius": ("radius_km", float,              "a distance in km, e.g. 25"),
+    "--precip":      ("precip",    _precip_arg,
+                      "a precip product: " + ", ".join(sorted(PRECIP_PROVIDERS))),
 }
 # Flags that are just on/off, as {flag: (option key, value when present)}.
 _BOOL_FLAGS = {
@@ -807,7 +1001,7 @@ def parse_args(argv):
     files = []
     opts = {"asof": date.today(), "use_cache": True, "do_pool": True,
             "as_json": False, "version": False, "n_harm": 1,
-            "radius_km": POOL_RADIUS_KM}
+            "radius_km": POOL_RADIUS_KM, "precip": None}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -847,13 +1041,18 @@ def parse_args(argv):
 # reimplementing these passes kept checking `analyze_base(...) is None` after the
 # n == 0 case was added, and returned 500s on input the CLI handled fine.
 # --------------------------------------------------------------------------- #
-def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note):
+def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=None):
     """Pass 1 (per-source bases) -> pass 2 (pool) -> pass 3 (finalize). `note` is
     called as note(kind, message, source_name) for anything skipped or failed."""
+    caveat = getattr(provider or PRECIP_PROVIDER, "caveat", None)
+    if caveat:
+        # Said once per run, not once per source, and before the first fetch -- it
+        # is a property of the product the user asked for, not of any one spring.
+        note("caveat", caveat)
     bases = []
     for src in sources:
         try:
-            b = analyze_base(src, asof, use_cache, n_harm)
+            b = analyze_base(src, asof, use_cache, n_harm, provider)
             if b is None or b["n"] == 0:
                 # Say WHY: "you gave me nothing" and "all your data predates my
                 # precipitation record" are very different problems for the author.
@@ -867,7 +1066,7 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note):
     return [finalize(b) for b in bases]
 
 def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
-        use_cache=True, notes=None, on_note=None):
+        use_cache=True, precip=None, notes=None, on_note=None):
     """Run the engine over loaded sources and return the same dict --json prints.
 
     This is what main() does minus argument parsing and output, so an embedding
@@ -877,19 +1076,25 @@ def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIU
         sources = forecast.load_sources_from([io.StringIO(body)])
         payload = forecast.run(sources, date(2026, 8, 15))
 
-    `asof` defaults to today. `notes` may be a list to append to (pre-seed it with
-    anything that went wrong before this point, e.g. a rejected input file, and it
-    will appear in the returned payload). `on_note` is called with each note dict
-    as it happens, for a caller that wants to log or stream them."""
+    `asof` defaults to today. `precip` names one of PRECIP_PROVIDERS ("open-meteo",
+    "iem:prism", "iem:mrms"); None means "whatever PRECIP_PROVIDER is", so a host
+    that assigned its own callable keeps it. `notes` may be a list to append to
+    (pre-seed it with anything that went wrong before this point, e.g. a rejected
+    input file, and it will appear in the returned payload). `on_note` is called
+    with each note dict as it happens, for a caller that wants to log or stream
+    them."""
     asof = asof or date.today()
+    provider = resolve_precip(precip) if precip else PRECIP_PROVIDER
     notes = notes if notes is not None else []
     def note(kind, msg, name=None):
         entry = {"kind": kind, "source": name, "message": msg}
         notes.append(entry)
         if on_note:
             on_note(entry)
-    rows = _analyse(sources, asof, use_cache, harmonics, pool, pool_radius_km, note)
-    return run_json(rows, notes, asof, pool, pool_radius_km, harmonics, use_cache)
+    rows = _analyse(sources, asof, use_cache, harmonics, pool, pool_radius_km, note,
+                    provider)
+    return run_json(rows, notes, asof, pool, pool_radius_km, harmonics, use_cache,
+                    precip_name(provider))
 
 def main(argv):
     try:
@@ -901,6 +1106,11 @@ def main(argv):
         return 0
     asof, use_cache, do_pool = opts["asof"], opts["use_cache"], opts["do_pool"]
     as_json, n_harm, radius_km = opts["as_json"], opts["n_harm"], opts["radius_km"]
+    # No --precip means "whatever PRECIP_PROVIDER is" rather than "open-meteo", so
+    # that a host importing this module and assigning its own provider still gets
+    # it when it shells out to the CLI. parse_args already rejected an unknown
+    # name, so resolve cannot raise here.
+    provider = resolve_precip(opts["precip"]) if opts["precip"] else PRECIP_PROVIDER
     # No files named? Take the CSV from stdin when it's a pipe, so `... | forecast.py`
     # works bare; a bare invocation from a terminal still prints the usage doc.
     if not files and not sys.stdin.isatty():
@@ -919,22 +1129,22 @@ def main(argv):
     except Exception as e:
         note("error", str(e))
         if as_json:
-            json.dump(run_json([], notes, asof, do_pool, radius_km, n_harm, use_cache),
-                      sys.stdout, indent=2)
+            json.dump(run_json([], notes, asof, do_pool, radius_km, n_harm, use_cache,
+                               precip_name(provider)), sys.stdout, indent=2)
             print()
         return 2
     # The analysis itself lives in _analyse(), shared with run(), so the CLI and an
     # embedding host cannot answer differently for the same input.
-    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note)
+    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note, provider)
     if as_json:
-        json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache),
-                  sys.stdout, indent=2)
+        json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
+                           precip_name(provider)), sys.stdout, indent=2)
         print()
         return 0
     for a in rows:
         print_source(a)
     if len(rows) > 1:
-        print_table(rows)
+        print_table(rows, precip_name(provider))
     return 0
 
 def cli():
