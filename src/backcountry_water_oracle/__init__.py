@@ -384,6 +384,13 @@ IEM_LAT_RANGE = (23.0, 51.0)
 IEM_LON_RANGE = (-126.0, -65.0)
 IEM_PAUSE_S = 0.5        # between requests -- it is a free service, chunked by year
 IEM_RETRIES = 3
+IEM_RETRY_SLEEP_S = 3
+# The radar cross-check does NOT retry. Retrying is right when the data is
+# required -- the fit cannot proceed without it -- and wrong for an optional
+# second opinion: a source outside CONUS, or IEM having an outage, would
+# otherwise sit through IEM_RETRIES x IEM_RETRY_SLEEP_S of sleep per source
+# before dropping a line that was never going to appear.
+RADAR_RETRIES = 1
 
 def _iem_cache_path(lat, lon, year):
     """One file per rounded coordinate-YEAR, holding every product that year.
@@ -399,7 +406,7 @@ def _iem_cache_path(lat, lon, year):
     to answer --precip iem:prism and then --precip iem:mrms."""
     return os.path.join(CACHE_DIR, "iem", f"{round(lat,2)}_{round(lon,2)}_{year}.json")
 
-def _iem_year(lat, lon, year, start, end, use_cache=True):
+def _iem_year(lat, lon, year, start, end, use_cache=True, retries=None):
     """One coordinate-year as [{"date", "prism", "mrms"}, ...], cached on disk."""
     d1 = max(date(year, 1, 1), start)
     d2 = min(date(year, 12, 31), end)
@@ -417,15 +424,16 @@ def _iem_year(lat, lon, year, start, end, use_cache=True):
         except (ValueError, KeyError, TypeError):
             pass                                       # unreadable cache -> refetch
     url = IEM_MULTIDAY.format(d1=d1.isoformat(), d2=d2.isoformat(), lat=lat, lon=lon)
-    for attempt in range(IEM_RETRIES):
+    retries = IEM_RETRIES if retries is None else retries
+    for attempt in range(retries):
         try:
             with urllib.request.urlopen(url, timeout=120) as r:
                 data = json.load(r)
             break
         except Exception:
-            if attempt == IEM_RETRIES - 1:
+            if attempt == retries - 1:
                 raise
-            time.sleep(3)
+            time.sleep(IEM_RETRY_SLEEP_S)
     rows = [{"date": row["date"], "prism": row.get("prism_precip_in"),
              "mrms": row.get("mrms_precip_in")} for row in data.get("data", [])]
     os.makedirs(os.path.dirname(cpath), exist_ok=True)
@@ -434,7 +442,7 @@ def _iem_year(lat, lon, year, start, end, use_cache=True):
     time.sleep(IEM_PAUSE_S)                  # be a good citizen of a free service
     return rows
 
-def _iem_provider(field, label, caveat=None):
+def _iem_provider(field, label, caveat=None, retries=None):
     """Build a provider that reads one IEMRE field. See PRECIP_PROVIDERS below."""
     def provider(lat, lon, end_date, use_cache=True):
         if not (IEM_LAT_RANGE[0] <= lat <= IEM_LAT_RANGE[1]
@@ -445,7 +453,7 @@ def _iem_provider(field, label, caveat=None):
         start = date.fromisoformat(PRECIP_START)
         rows = []
         for year in range(start.year, end_date.year + 1):
-            rows.extend(_iem_year(lat, lon, year, start, end_date, use_cache))
+            rows.extend(_iem_year(lat, lon, year, start, end_date, use_cache, retries))
         vals = [r[field] for r in rows]
         # Inside the bounding box but outside the grid (offshore, over the border)
         # the service answers with nulls rather than an error. Nineteen years of
@@ -483,6 +491,39 @@ DEFAULT_PRECIP = "open-meteo"
 
 PRECIP_PROVIDER = PRECIP_PROVIDERS[DEFAULT_PRECIP]
 
+# --------------------------------------------------------------------------- #
+# The radar cross-check (#18)
+# ---------------------------------------------------------------------------
+# Every output this tool produces ends by telling the user to go look at radar
+# before a summer go/no-go. That caveat is an admission: ERA5 smooths convective
+# cells, which is exactly when the answer matters most and is least trustworthy.
+# This automates the step the tool was asking for by hand.
+#
+# It sits BESIDE the model, never inside it. The bake-off is why: the fit barely
+# notices the product (season-controlled r moves <0.05, no window or type
+# changes), while the as-of read moves enough to flip verdicts. So refitting on
+# radar would buy nothing on the fit and pay MRMS's real cost -- it is genuine
+# only from ~2014, so the historical record and the analog pool would either
+# truncate or silently mix radar with backfilled proxy.
+#
+# Reading only the RECENT window sidesteps that entirely: the pre-2014 backfill
+# is never touched. And the check deliberately cannot move the verdict -- the
+# analog pool was built from ERA5 windows, so comparing an MRMS current value
+# against ERA5 history is precisely the apples-to-oranges error to avoid. It
+# informs the reader; it does not re-run the match.
+#
+# RADAR_PROVIDER is the seam, mirroring PRECIP_PROVIDER: set it to None to turn
+# the check off, or to your own callable to serve radar from your own store. A
+# host on serverless wants one of those -- the default fetches ~19 years to read
+# the last 60 days (see "Remaining scope" on #17), which a warm cache absorbs and
+# a cold one does not.
+# --------------------------------------------------------------------------- #
+RADAR_WINDOWS = [30, 60]     # "did a storm just hit" -- only short windows mean this
+# Below this the model read rounds to 0.00" and a ratio against it is meaningless
+# (and arbitrarily large). That is the HEADLINE case, not an edge case: the
+# bake-off's worst disagreement was ERA5 0.04" against MRMS 3.66".
+RADAR_MIN_MODEL_IN = 0.005
+
 def resolve_precip(name):
     """A built-in's name -> its provider callable. Raises ValueError on an unknown
     name, listing what there is."""
@@ -512,6 +553,62 @@ def precip_name(provider):
         if p is provider:
             return name
     return getattr(provider, "__name__", None) or "custom"
+
+# The radar seam. MRMS by default -- it is the only one of the three products the
+# bake-off tested that sees convective cells at all. Assignable, like
+# PRECIP_PROVIDER: None turns the check off entirely.
+#
+# A separate instance from the fit's, differing only in that it does not retry
+# (see RADAR_RETRIES). It declares its product name so params.radar still reads
+# "iem:mrms" rather than the function's name -- the same mechanism a host uses to
+# say its own callable serves a known product.
+iem_mrms_radar = _iem_provider("mrms", "MRMS (IEM)", retries=RADAR_RETRIES)
+iem_mrms_radar.precip_name = "iem:mrms"
+
+RADAR_PROVIDER = iem_mrms_radar
+
+# Asking for a product by name for the CROSS-CHECK gets the non-retrying variant;
+# anything without one falls through to the ordinary provider.
+_RADAR_VARIANTS = {"iem:mrms": iem_mrms_radar}
+
+def resolve_radar(name):
+    """A radar product's name -> its provider, or None for the string "none".
+
+    "none" is a name rather than a Python None so that --radar and run(radar=...)
+    can both say "off" in the same word, and so `radar=None` keeps meaning "I did
+    not specify -- use RADAR_PROVIDER", exactly as `precip=None` does."""
+    if name == "none":
+        return None
+    resolve_precip(name)                      # validates, and raises the good error
+    return _RADAR_VARIANTS.get(name) or resolve_precip(name)
+
+# Distinguishes "the caller said nothing" from "the caller said off". Without it,
+# radar=None would have to mean both, and there would be no way to disable the
+# check for one call without reaching for the global.
+_RADAR_UNSET = object()
+
+def _radar_or_default(radar):
+    return RADAR_PROVIDER if radar is _RADAR_UNSET else radar
+
+def radar_check(lat, lon, asof_eff, idx, use_cache, provider):
+    """Recent-window rain from a radar product, beside the model's own figure.
+
+    `idx` is the FITTED series' index, and both sides are read at `asof_eff` -- the
+    same date the verdict was read at -- so the comparison is against exactly the
+    number the verdict used, not a differently-ended window.
+
+    `ratio_to_model` is None when the model read rounds to zero: a ratio against
+    0.00" is meaningless, and that is the case worth flagging in words instead."""
+    ridx = build_precip_index(fetch_precip(lat, lon, asof_eff, use_cache, provider))
+    windows = {}
+    for w in RADAR_WINDOWS:
+        radar_in = window_sum(ridx, asof_eff, w)
+        model_in = window_sum(idx, asof_eff, w)
+        windows[f"{w}d"] = {
+            "radar_in": radar_in, "model_in": model_in,
+            "ratio_to_model": (radar_in / model_in
+                               if model_in >= RADAR_MIN_MODEL_IN else None)}
+    return {"product": precip_name(provider), "windows": windows}
 
 def _check_daily(data, who):
     """Fail loudly, at the seam, on a provider that returns the wrong shape --
@@ -831,7 +928,29 @@ def running_phrase(pred):
     if pred < 0.70: return "Likely flowing (moderate)"
     return "Likely flowing well"
 
-def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None):
+def _radar_read(src, asof_eff, idx, use_cache, provider, radar):
+    """The radar cross-check for one source, or None -- never an exception.
+
+    It fails SOFT, by design: this is a second opinion printed beside a forecast,
+    and it must never be able to take the forecast down. Outside CONUS, IEM having
+    a bad day, a host's own radar callable throwing -- all of it produces an absent
+    line rather than a dead source.
+
+    Nothing is noted when it fails. The check is on by default, so a note would
+    fire for every source outside the US on every run, which trains people to
+    ignore notes; the line's absence is the signal."""
+    radar = _radar_or_default(radar)
+    # Cross-checking a product against itself is a tautology (ratio 1.0) and would
+    # pay a second fetch to prove it. --precip iem:mrms already IS the radar read.
+    if radar is None or radar is (provider or PRECIP_PROVIDER):
+        return None
+    try:
+        return radar_check(src["lat"], src["lon"], asof_eff, idx, use_cache, radar)
+    except Exception:
+        return None
+
+def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None,
+                 radar=_RADAR_UNSET):
     """Per-source pass: precip -> raw + season-controlled per-window r vectors, plus
     the machinery finalize() needs. Stops BEFORE choosing a best window, so pooling
     can adjust the controlled r first. `pooled_ctrl` starts equal to the source's own
@@ -861,6 +980,7 @@ def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None):
     asof_eff = min(asof, idx["last"])
     common = dict(counts, name=src["name"], lat=src["lat"], lon=src["lon"],
                   annual_precip=idx["annual"], rain_pct=rain_percentiles(idx, asof_eff),
+                  radar=_radar_read(src, asof_eff, idx, use_cache, provider, radar),
                   asof_eff=asof_eff, n_harm=n_harm)
     if n == 0:
         return dict(common, n=0)
@@ -908,7 +1028,8 @@ def finalize(b):
             "borrowed_at_best": b["borrowed"][best], "group_n": b["group_n"],
             "type": classify(b["pct_dry"], best_w),
             "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": b["n_harm"],
-            "by_month": b["by_month"], "rain_pct": b["rain_pct"]}
+            "by_month": b["by_month"], "rain_pct": b["rain_pct"],
+            "radar": b["radar"]}
 
 def finalize_rain_only(b):
     """finalize()'s counterpart for a source with no usable reports (#8).
@@ -923,7 +1044,8 @@ def finalize_rain_only(b):
             "n_total": b["n_total"], "n_early": b["n_early"], "n_late": b["n_late"],
             "precip_first": b["precip_first"], "precip_last": b["precip_last"],
             "annual_precip": b["annual_precip"], "asof": b["asof_eff"],
-            "n_harm": b["n_harm"], "rain_pct": b["rain_pct"]}
+            "n_harm": b["n_harm"], "rain_pct": b["rain_pct"],
+            "radar": b["radar"]}
 
 # --------------------------------------------------------------------------- #
 # Neighbor disclosure (#8, second half)
@@ -984,12 +1106,13 @@ def attach_neighbors(rows, radius_km):
         # not even agree on what KIND of source they are, no stand-in is safe.
         a["neighbors_disagree"] = len({o["type"] for o in near}) > 1
 
-def analyze(src, asof, use_cache=True, n_harm=1, provider=None):
+def analyze(src, asof, use_cache=True, n_harm=1, provider=None,
+            radar=_RADAR_UNSET):
     """Single-source convenience (no pooling): base pass then finalize.
     None when the source has nothing inside the precip record (see excluded_note).
     `provider` overrides PRECIP_PROVIDER for this call; resolve_precip() turns one
     of the built-in names into one."""
-    b = analyze_base(src, asof, use_cache, n_harm, provider)
+    b = analyze_base(src, asof, use_cache, n_harm, provider, radar)
     return None if b is None or b["n"] == 0 else finalize(b)
 
 def excluded_note(a):
@@ -1041,7 +1164,31 @@ def print_rain_only_source(a):
     print("  NO FLOW VERDICT -- with no usable reports there is nothing to learn")
     print("  how this source answers rain, and rain alone does not decide it.")
     print_rain_block(a)
+    print_radar_check(a)
     print_neighbors(a)
+
+def print_radar_check(a):
+    """The radar second opinion. Phrased as a comparison, never as a correction --
+    silently replacing the model's number would imply a precision neither has."""
+    rc = a["radar"]
+    if rc is None:
+        return
+    print(f"\n  RADAR CHECK ({rc['product']}) -- NOT in anything above:")
+    for w in RADAR_WINDOWS:
+        v = rc["windows"][f"{w}d"]
+        if v["ratio_to_model"] is None:
+            how = "model read ~nothing; radar saw a cell it missed"
+        elif v["ratio_to_model"] >= 1.5:
+            how = f"{v['ratio_to_model']:.1f}x the model's figure"
+        elif v["ratio_to_model"] <= 0.67:
+            how = f"{v['ratio_to_model']:.1f}x -- radar saw LESS than the model"
+        else:
+            how = "they broadly agree"
+        print(f"     {w:>3}d  radar {v['radar_in']:>6.2f}\"  vs model "
+              f"{v['model_in']:>6.2f}\"   {how}")
+    print("     ^ the fit and the read above are the model's. Radar disagreeing")
+    print("       means treat them as a floor -- it does not correct them, because")
+    print("       the analog pool is built from the model's own history.")
 
 def print_neighbors(a):
     """Who is nearby and what THEY read. Never combined into a read for this one."""
@@ -1092,6 +1239,7 @@ def print_source(a):
           f"nearest-analog flow ~{a['pred']:.2f} (0-1)")
     print(f"  VERDICT: {running_phrase(a['pred'])}"
           + ("   [small n - weak confidence]" if a['n'] < 25 else ""))
+    print_radar_check(a)
     print_rain_block(a)
 
 def print_table(rows, precip=DEFAULT_PRECIP):
@@ -1128,7 +1276,14 @@ def print_table(rows, precip=DEFAULT_PRECIP):
     # It applies to the rain percentiles as much as to the verdicts, so it is
     # printed even when every source here is rain-only.
     if precip == DEFAULT_PRECIP:
-        print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
+        # ...and once the radar check has actually run, telling the reader to go
+        # and check radar by hand is telling them to redo what just happened. That
+        # instruction becoming obsolete is the entire point of #18.
+        if any(a["radar"] for a in rows):
+            print("ERA5 misses monsoon cells -- the RADAR CHECK under each source above is")
+            print("that cross-check. Where it disagrees, read the verdict as a floor.")
+        else:
+            print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
     else:
         print(f"Precip: {precip}, NOT the default ERA5 -- see the [caveat] above, and")
         print("don't compare these numbers against a run made with another product.")
@@ -1213,10 +1368,29 @@ def source_json(a):
         # anyway for the same reason `small_n` is: it is the thing a reader should
         # lead with, and anything left to be derived is a thing everyone skips.
         "neighbors_disagree": a["neighbors_disagree"],
+        # A second opinion on the RECENT window from a radar product, or null when
+        # unavailable / switched off. It is beside the model, never in it: nothing
+        # above was computed from these numbers, and `ratio_to_model` is null where
+        # the model read rounds to 0.00" (the case worth stating in words).
+        "radar_check": radar_json(a["radar"]),
     }
 
+def radar_json(rc):
+    if rc is None:
+        return None
+    return {"product": rc["product"],
+            "windows": {w: {"radar_in": round(v["radar_in"], 3),
+                            "model_in": round(v["model_in"], 3),
+                            "ratio_to_model": (None if v["ratio_to_model"] is None
+                                               else round(v["ratio_to_model"], 2))}
+                        for w, v in rc["windows"].items()}}
+
+def _radar_param(provider):
+    """What params.radar should say: the product name, or "none" when off."""
+    return "none" if provider is None else precip_name(provider)
+
 def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
-             precip=DEFAULT_PRECIP):
+             precip=DEFAULT_PRECIP, radar="none"):
     """One object on stdout. Sources stay in input order -- sort client-side."""
     return {
         "asof": asof.isoformat(),
@@ -1226,7 +1400,7 @@ def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
         # HAS changed verdicts before, at identical input. `precip` is there for
         # the same reason one level down: same method, different rain, different
         # answer. Comparing two forecasts means checking both.
-        "params": {"engine_version": __version__, "precip": precip,
+        "params": {"engine_version": __version__, "precip": precip, "radar": radar,
                    "pool": do_pool, "pool_radius_km": radius_km,
                    "harmonics": n_harm, "cache": use_cache, "windows": WINDOWS},
         "sources": [source_json(a) for a in rows],
@@ -1239,6 +1413,11 @@ def _precip_arg(s):
     resolve_precip(s)
     return s
 
+def _radar_arg(s):
+    """Same, for --radar -- which additionally accepts "none" to switch it off."""
+    resolve_radar(s)
+    return s
+
 # Flags that take a value, as {flag: (option key, parser, what it wants)}. The
 # parser is what turns the string into the option, and its name is what the user
 # is told when it rejects one.
@@ -1248,6 +1427,9 @@ _VALUE_FLAGS = {
     "--pool-radius": ("radius_km", float,              "a distance in km, e.g. 25"),
     "--precip":      ("precip",    _precip_arg,
                       "a precip product: " + ", ".join(sorted(PRECIP_PROVIDERS))),
+    "--radar":       ("radar",     _radar_arg,
+                      "a radar product, or none: "
+                      + ", ".join(sorted(PRECIP_PROVIDERS) + ["none"])),
 }
 # Flags that are just on/off, as {flag: (option key, value when present)}.
 _BOOL_FLAGS = {
@@ -1267,7 +1449,7 @@ def parse_args(argv):
     files = []
     opts = {"asof": date.today(), "use_cache": True, "do_pool": True,
             "as_json": False, "version": False, "n_harm": 1,
-            "radius_km": POOL_RADIUS_KM, "precip": None}
+            "radius_km": POOL_RADIUS_KM, "precip": None, "radar": None}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -1307,7 +1489,8 @@ def parse_args(argv):
 # reimplementing these passes kept checking `analyze_base(...) is None` after the
 # n == 0 case was added, and returned 500s on input the CLI handled fine.
 # --------------------------------------------------------------------------- #
-def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=None):
+def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=None,
+             radar=_RADAR_UNSET):
     """Pass 1 (per-source bases) -> pass 2 (pool) -> pass 3 (finalize). `note` is
     called as note(kind, message, source_name) for anything skipped or failed."""
     caveat = getattr(provider or PRECIP_PROVIDER, "caveat", None)
@@ -1318,7 +1501,7 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=N
     bases, ordered = [], []
     for src in sources:
         try:
-            b = analyze_base(src, asof, use_cache, n_harm, provider)
+            b = analyze_base(src, asof, use_cache, n_harm, provider, radar)
             if b is None:
                 note("skip", "no reports", src["name"])
                 continue
@@ -1351,7 +1534,7 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=N
     return rows
 
 def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
-        use_cache=True, precip=None, notes=None, on_note=None):
+        use_cache=True, precip=None, radar=None, notes=None, on_note=None):
     """Run the engine over loaded sources and return the same dict --json prints.
 
     This is what main() does minus argument parsing and output, so an embedding
@@ -1363,13 +1546,18 @@ def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIU
 
     `asof` defaults to today. `precip` names one of PRECIP_PROVIDERS ("open-meteo",
     "iem:prism", "iem:mrms"); None means "whatever PRECIP_PROVIDER is", so a host
-    that assigned its own callable keeps it. `notes` may be a list to append to
+    that assigned its own callable keeps it. `radar` names the product for the
+    cross-check, or "none" to switch it off (None = whatever RADAR_PROVIDER is).
+    A host on serverless probably wants radar="none" or its own RADAR_PROVIDER:
+    the default reads the recent window out of a full-history fetch, which a warm
+    cache absorbs and a cold one pays for. `notes` may be a list to append to
     (pre-seed it with anything that went wrong before this point, e.g. a rejected
     input file, and it will appear in the returned payload). `on_note` is called
     with each note dict as it happens, for a caller that wants to log or stream
     them."""
     asof = asof or date.today()
     provider = resolve_precip(precip) if precip else PRECIP_PROVIDER
+    radar_provider = resolve_radar(radar) if radar else _radar_or_default(_RADAR_UNSET)
     notes = notes if notes is not None else []
     def note(kind, msg, name=None):
         entry = {"kind": kind, "source": name, "message": msg}
@@ -1377,9 +1565,9 @@ def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIU
         if on_note:
             on_note(entry)
     rows = _analyse(sources, asof, use_cache, harmonics, pool, pool_radius_km, note,
-                    provider)
+                    provider, radar_provider)
     return run_json(rows, notes, asof, pool, pool_radius_km, harmonics, use_cache,
-                    precip_name(provider))
+                    precip_name(provider), _radar_param(radar_provider))
 
 def main(argv):
     try:
@@ -1396,6 +1584,10 @@ def main(argv):
     # it when it shells out to the CLI. parse_args already rejected an unknown
     # name, so resolve cannot raise here.
     provider = resolve_precip(opts["precip"]) if opts["precip"] else PRECIP_PROVIDER
+    # Same rule for --radar: unspecified means "whatever RADAR_PROVIDER is", so a
+    # host that turned the cross-check off keeps it off when it shells out.
+    radar = (resolve_radar(opts["radar"]) if opts["radar"]
+             else _radar_or_default(_RADAR_UNSET))
     # No files named? Take the CSV from stdin when it's a pipe, so `... | forecast.py`
     # works bare; a bare invocation from a terminal still prints the usage doc.
     if not files and not sys.stdin.isatty():
@@ -1415,15 +1607,18 @@ def main(argv):
         note("error", str(e))
         if as_json:
             json.dump(run_json([], notes, asof, do_pool, radius_km, n_harm, use_cache,
-                               precip_name(provider)), sys.stdout, indent=2)
+                               precip_name(provider), _radar_param(radar)),
+                      sys.stdout, indent=2)
             print()
         return 2
     # The analysis itself lives in _analyse(), shared with run(), so the CLI and an
     # embedding host cannot answer differently for the same input.
-    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note, provider)
+    rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note, provider,
+                    radar)
     if as_json:
         json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
-                           precip_name(provider)), sys.stdout, indent=2)
+                           precip_name(provider), _radar_param(radar)),
+                  sys.stdout, indent=2)
         print()
         return 0
     for a in rows:

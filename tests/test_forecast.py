@@ -70,16 +70,25 @@ def _no_network(*a, **k):
     raise AssertionError("test attempted a network call")
 
 class OfflineTestCase(unittest.TestCase):
-    """Installs the fixture provider and makes any real fetch an error."""
+    """Installs the fixture provider and makes any real fetch an error.
+
+    RADAR_PROVIDER is switched OFF here rather than left at its default (#18). It
+    defaults to a live IEM provider, and the radar check swallows every exception
+    by design -- so leaving it on would let `_no_network` be caught and discarded,
+    turning "this test tried to reach the internet" from a loud failure into a
+    silent 6-second pause. Tests that want a radar read inject a stub."""
     def setUp(self):
         self._provider = forecast.PRECIP_PROVIDER
+        self._radar = forecast.RADAR_PROVIDER
         self._urlopen = urllib.request.urlopen
         self._cache_dir = forecast.CACHE_DIR
         forecast.PRECIP_PROVIDER = fixture_provider
+        forecast.RADAR_PROVIDER = None
         urllib.request.urlopen = _no_network
 
     def tearDown(self):
         forecast.PRECIP_PROVIDER = self._provider
+        forecast.RADAR_PROVIDER = self._radar
         urllib.request.urlopen = self._urlopen
         forecast.CACHE_DIR = self._cache_dir
 
@@ -648,6 +657,8 @@ class TestIemProvider(unittest.TestCase):
         self._cache_dir, self._urlopen = forecast.CACHE_DIR, urllib.request.urlopen
         self._start = forecast.PRECIP_START
         self._pause = forecast.IEM_PAUSE_S
+        self._radar = forecast.RADAR_PROVIDER
+        forecast.RADAR_PROVIDER = None      # tested on its own, below
         forecast.CACHE_DIR = self.tmp
         forecast.PRECIP_START = "2024-01-01"        # keep the fixture years small
         forecast.IEM_PAUSE_S = 0                    # no politeness sleep in tests
@@ -666,6 +677,7 @@ class TestIemProvider(unittest.TestCase):
     def tearDown(self):
         forecast.CACHE_DIR, urllib.request.urlopen = self._cache_dir, self._urlopen
         forecast.PRECIP_START, forecast.IEM_PAUSE_S = self._start, self._pause
+        forecast.RADAR_PROVIDER = self._radar
 
     def test_outside_conus_is_an_error_not_a_silent_fallback(self):
         """The whole point: you asked for PRISM, you get PRISM or you get told."""
@@ -758,6 +770,160 @@ class TestIemProvider(unittest.TestCase):
         self.assertEqual(a["n"], 2)
 
 
+# =========================================================================== #
+# The radar cross-check -- issue #18
+# =========================================================================== #
+def constant_radar(per_day):
+    """A radar provider whose every day holds `per_day` inches, so a 30d window is
+    exactly 30 * per_day and a ratio can be checked by hand."""
+    def provider(lat, lon, end_date, use_cache=True):
+        start = date.fromisoformat(forecast.PRECIP_START)
+        n = (end_date - start).days + 1
+        return {"daily": {"time": [(start + timedelta(days=i)).isoformat()
+                                   for i in range(n)],
+                          "precipitation_sum": [per_day] * n}}
+    provider.precip_name = "test:radar"
+    return provider
+
+
+class TestRadarCheck(OfflineTestCase):
+    WET = staticmethod(constant_radar(0.1))          # 3.0" per 30d, 6.0" per 60d
+
+    def payload(self, radar=None, csv=None, **kw):
+        forecast.RADAR_PROVIDER = radar
+        body = csv if csv is not None else open(EXAMPLE_CSV).read()
+        return forecast.run(forecast.load_sources_from([io.StringIO(body)]), ASOF, **kw)
+
+    def test_it_reports_both_short_windows_and_only_those(self):
+        rc = self.payload(self.WET)["sources"][0]["radar_check"]
+        self.assertEqual(sorted(int(w[:-1]) for w in rc["windows"]), [30, 60])
+        self.assertEqual(sorted(forecast.RADAR_WINDOWS), [30, 60])
+
+    def test_the_numbers_are_the_radar_series_not_the_model(self):
+        src = self.payload(self.WET)["sources"][0]
+        rc = src["radar_check"]
+        self.assertAlmostEqual(rc["windows"]["30d"]["radar_in"], 3.0, places=3)
+        self.assertAlmostEqual(rc["windows"]["60d"]["radar_in"], 6.0, places=3)
+        # ...while the model column is the fitted series, read at the same date the
+        # verdict was read at -- so the two columns are genuinely comparable.
+        rain = src["rain_percentiles"]
+        self.assertAlmostEqual(rc["windows"]["30d"]["model_in"], rain["30d"]["inches"])
+        self.assertAlmostEqual(rc["windows"]["60d"]["model_in"], rain["60d"]["inches"])
+
+    def test_the_ratio_is_radar_over_model(self):
+        rc = self.payload(self.WET)["sources"][0]["radar_check"]
+        for w in ("30d", "60d"):
+            v = rc["windows"][w]
+            self.assertAlmostEqual(v["ratio_to_model"],
+                                   round(v["radar_in"] / v["model_in"], 2), places=2)
+
+    def test_the_product_is_named(self):
+        self.assertEqual(self.payload(self.WET)["sources"][0]["radar_check"]["product"],
+                         "test:radar")
+
+    def test_params_records_what_cross_checked(self):
+        self.assertEqual(self.payload(self.WET)["params"]["radar"], "test:radar")
+        self.assertEqual(self.payload(None)["params"]["radar"], "none")
+
+    def test_IT_DOES_NOT_MOVE_THE_VERDICT(self):
+        """The load-bearing guarantee of #18: strictly additive. The analog pool is
+        built from the model's own windows, so a radar number must never enter it."""
+        without = self.payload(None)
+        with_radar = self.payload(self.WET)
+        self.assertIsNone(without["sources"][0]["radar_check"])
+        self.assertIsNotNone(with_radar["sources"][0]["radar_check"])
+        for a, b in zip(without["sources"], with_radar["sources"]):
+            self.assertEqual({k: v for k, v in a.items() if k != "radar_check"},
+                             {k: v for k, v in b.items() if k != "radar_check"})
+
+    def test_a_model_reading_of_zero_gives_no_ratio(self):
+        """The headline case -- ERA5 0.04" against MRMS 3.66" -- has a denominator
+        that rounds to nothing. A ratio there would be arbitrary, so there isn't one."""
+        dry = constant_radar(0.0)
+        dry.precip_name = "test:dry-model"
+        forecast.PRECIP_PROVIDER = dry                       # the FIT sees no rain
+        rc = self.payload(self.WET)["sources"][0]["radar_check"]
+        self.assertEqual(rc["windows"]["30d"]["model_in"], 0.0)
+        self.assertIsNone(rc["windows"]["30d"]["ratio_to_model"])
+        self.assertGreater(rc["windows"]["30d"]["radar_in"], 0)
+
+    def test_a_failing_radar_provider_costs_a_line_not_a_source(self):
+        def boom(lat, lon, end_date, use_cache=True):
+            raise RuntimeError("IEM is having a day")
+        payload = self.payload(boom)
+        self.assertEqual(len(payload["sources"]), 3)          # every source survived
+        self.assertIsNone(payload["sources"][0]["radar_check"])
+        self.assertEqual(payload["notes"], [])                # and it stayed quiet
+
+    def test_a_malformed_radar_provider_is_also_soft(self):
+        payload = self.payload(lambda *a, **k: {"nonsense": True})
+        self.assertEqual(len(payload["sources"]), 3)
+        self.assertIsNone(payload["sources"][0]["radar_check"])
+
+    def test_cross_checking_the_fit_against_itself_is_skipped(self):
+        """--precip iem:mrms IS the radar read; a ratio of 1.0 is not a check."""
+        forecast.PRECIP_PROVIDER = fixture_provider
+        payload = self.payload(fixture_provider)
+        self.assertIsNone(payload["sources"][0]["radar_check"])
+
+    def test_a_source_with_no_reports_gets_one_too(self):
+        got = self.payload(self.WET, csv="source,lat,lon,date,score\n"
+                                         "Pin,34.09,-111.47,,\n")["sources"][0]
+        self.assertEqual(got["n"], 0)
+        self.assertIsNone(got["verdict"])
+        self.assertIsNotNone(got["radar_check"])              # rain is rain
+
+    def test_the_text_report_frames_it_as_a_floor_not_a_correction(self):
+        forecast.RADAR_PROVIDER = self.WET
+        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        self.assertIn("RADAR CHECK", out)
+        self.assertIn("NOT in anything above", out)
+        self.assertIn("floor", out)
+        self.assertIn("does not correct them", out)
+
+    def test_the_footer_stops_sending_the_reader_to_do_it_by_hand(self):
+        """Retiring that instruction is the point of #18 -- it was an admission."""
+        forecast.RADAR_PROVIDER = self.WET
+        _, on, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        forecast.RADAR_PROVIDER = None
+        _, off, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        self.assertIn("cross-check radar (MRMS/AHPS)", off)
+        self.assertNotIn("cross-check radar (MRMS/AHPS)", on)
+        self.assertIn("that cross-check", on)
+
+    # -- selection --------------------------------------------------------- #
+    def test_none_switches_it_off_by_name(self):
+        self.assertIsNone(forecast.resolve_radar("none"))
+
+    def test_the_radar_variant_does_not_retry(self):
+        """Retrying is right for the fit and wrong for an optional second opinion:
+        it would sleep through IEM_RETRIES per source to drop a line anyway."""
+        self.assertEqual(forecast.RADAR_RETRIES, 1)
+        self.assertIs(forecast.resolve_radar("iem:mrms"), forecast.iem_mrms_radar)
+        self.assertIsNot(forecast.iem_mrms_radar, forecast.iem_mrms_provider)
+        self.assertEqual(forecast.precip_name(forecast.iem_mrms_radar), "iem:mrms")
+
+    def test_an_unknown_radar_product_is_rejected(self):
+        with self.assertRaises(ValueError):
+            forecast.resolve_radar("iem:mrmz")
+        code, out, err = run_cli([EXAMPLE_CSV, "--radar", "iem:mrmz"])
+        self.assertEqual(code, 2)
+        self.assertIn("[error]", err)
+
+    def test_the_cli_flag_selects_and_disables(self):
+        forecast.RADAR_PROVIDER = self.WET
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json",
+                             "--radar", "none"])
+        payload = json.loads(out)
+        self.assertEqual(payload["params"]["radar"], "none")
+        self.assertIsNone(payload["sources"][0]["radar_check"])
+
+    def test_no_flag_means_whatever_the_host_configured(self):
+        forecast.RADAR_PROVIDER = self.WET
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        self.assertEqual(json.loads(out)["params"]["radar"], "test:radar")
+
+
 class TestPrecipCache(unittest.TestCase):
     """Issue #6: the cache key must not embed the end date."""
     def setUp(self):
@@ -765,7 +931,9 @@ class TestPrecipCache(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self._cache_dir = forecast.CACHE_DIR
         self._urlopen = urllib.request.urlopen
+        self._radar = forecast.RADAR_PROVIDER
         forecast.CACHE_DIR = self.tmp
+        forecast.RADAR_PROVIDER = None          # the stub below only speaks ERA5
         self.fetched = []
 
         def stub(url, timeout=0):
@@ -1745,7 +1913,7 @@ class TestRun(OfflineTestCase):
         payload = forecast.run(self.sources(), ASOF, pool=False, harmonics=2,
                                pool_radius_km=15.0, use_cache=False)
         self.assertEqual(payload["params"], {"engine_version": forecast.__version__,
-                                             "precip": "open-meteo",
+                                             "precip": "open-meteo", "radar": "none",
                                              "pool": False, "pool_radius_km": 15.0,
                                              "harmonics": 2, "cache": False,
                                              "windows": forecast.WINDOWS})
@@ -1811,7 +1979,8 @@ class TestJsonSchema(OfflineTestCase):
             "name", "lat", "lon", "n", "small_n", "reports", "pct_dry", "mean_flow",
             "annual_precip_in", "type", "mean_flow_by_month", "correlations", "best",
             "asof", "precip_in", "predicted_flow", "verdict", "harmonics",
-            "rain_percentiles", "neighbors", "neighbors_disagree"]))
+            "rain_percentiles", "neighbors", "neighbors_disagree",
+            "radar_check"]))
 
     def test_rain_percentile_rows_cover_every_window(self):
         rain = self.src["rain_percentiles"]
