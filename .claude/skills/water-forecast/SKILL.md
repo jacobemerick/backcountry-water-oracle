@@ -165,10 +165,19 @@ verdict-derived field `null` (`verdict`, `best`, `type`, `pct_dry`,
   and don't fill the gap with your own guess from the rain numbers.
 - Say plainly what it is: *"nobody has reported on this one, so there's no flow
   call — only that the last 60 days are in the 42nd percentile for this date."*
-- **The strongest thing you can offer is a neighbor**: if the CSV has a reported
-  source nearby, name it, give its verdict, and say how far away it is and that
-  it is a different source. Do this in your prose — the engine does not transfer
-  a read across sources, and you must not imply it did.
+- **The strongest thing you can offer is a neighbor, and the engine now hands you
+  the list**: read `neighbors` (nearest first, each with `distance_km`, `type`,
+  `pct_dry`, `verdict`, `predicted_flow`). Name them, give distances, and say
+  plainly that these are *other sources'* reads. Don't average them, don't pick a
+  favourite, and never phrase one as this pin's answer — the engine deliberately
+  does not transfer a read across sources, and you must not do it on its behalf.
+- **If `neighbors_disagree` is true, lead with that.** It means the nearby sources
+  don't even agree on what *kind* of source they are, which is the direct evidence
+  that none of them is a safe stand-in: *"the three sources within 2 km of this pin
+  range from a reliable groundwater spring to a flashy seep that's dry a third of
+  the time — they can't tell you what this one does."*
+- Empty `neighbors` means nothing reported is within `--pool-radius`. Say so; it's
+  a real finding, not an omission.
 - If the user wants a real answer for that pin, tell them what would produce one:
   any dated observation at all, or reports from a nearby source to include.
 

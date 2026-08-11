@@ -210,7 +210,7 @@ comparable with everyone else's.
 python3 tests/test_forecast.py
 ```
 
-195 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+213 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
@@ -350,7 +350,10 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
       "60d":  { "inches": 0.863, "pct": 42, "n_years": 19, "median_in": 1.277 },
       "180d": { "inches": 4.152, "pct": 21, "n_years": 19, "median_in": 8.137 }
       // ...one entry per window
-    }
+    },
+    // nearby REPORTED sources, populated only when n == 0. Their own reads,
+    // never transferred onto this coordinate. [] for a source with a verdict.
+    "neighbors": [], "neighbors_disagree": false
   }],
   "notes": []   // [{kind: "skip"|"error"|"caveat", source, message}, ...]
                 // caveat = a limitation of the run itself (source is null),
@@ -445,10 +448,43 @@ A deliberate pin produces **no `skip` note**: asking what rain alone can say is 
 feature working. A source that *lost* reports still gets one, because that's
 information you didn't ask for.
 
-The most useful thing next to a pin is usually a *neighbor* — put nearby reported
-sources in the same CSV and read their rows. The engine won't transfer their read
-onto the pin (that's [#8], and the reasoning is on the issue), so comparing them is
-your call, not something the payload does for you.
+### Who's nearby (`neighbors`)
+
+The most useful thing left for a pin is what's *around* it, so a source with no
+verdict also gets the reported sources within `--pool-radius`, nearest first:
+
+```
+  NEARBY REPORTED SOURCES -- their own reads, NOT this coordinate's:
+      0.33 km  Castersen Seep               33% dry  Flashy (needs recent rain)       Marginal - pools/dripping at best
+      1.60 km  Big Kahuna Falls - Mazatza   14% dry  Flashy (needs recent rain)       Probably has water (light flow / pools)
+      1.98 km  Chilson Spring                3% dry  Reliable (groundwater-buffered)  Marginal - pools/dripping at best
+     ^ these disagree about what KIND of source they are, so none of
+       them is a safe stand-in for this one.
+```
+
+Each entry is that neighbor's **own** read under its own name — `distance_km`,
+`n`, `type`, `pct_dry`, `verdict`, `predicted_flow`. Nothing is combined,
+averaged, or transferred: two neighbors produce two rows, not one estimate, and
+the pin's own `verdict` and `predicted_flow` stay `null` no matter what they say.
+
+**`neighbors_disagree` is the field to lead with.** When the nearby sources don't
+agree on `type`, that disagreement *is* the answer — it's the direct evidence that
+no stand-in would have been safe. The example above is real: three sources inside
+2 km, spanning buffered-and-reliable to flashy-and-often-dry, with opposite reads.
+
+It's populated only where there's no verdict (a reported source already says what
+it borrowed, via `best.borrowed`/`best.group_n`), and other pins don't count — a
+pin can't inform a pin. `--no-pool` doesn't suppress it: that flag turns off
+*borrowing*, and saying what's nearby isn't borrowing.
+
+**Why disclosure and not transfer.** The obvious next step — re-run a neighbor's
+rain→flow mapping against *this* coordinate's rain — is arithmetically identical
+to just quoting the neighbor, because both sit in one precip cell. ERA5's grid is
+~9–11 km and the three example sources span 3.5 km on a *single* series, so the
+current value, every historical window, and the resulting flow come out
+bit-for-bit equal to the neighbor's own. Past ~11 km the numbers finally differ —
+and that's exactly where "nearby, so similar" stops being credible. Full reasoning
+is on [#8].
 
 ## Multiple sources & pooling
 
@@ -515,20 +551,19 @@ Shipped:
       a resolution upgrade; see [`--precip`](#choosing-a-precip-product---precip).
 - [x] **Antecedent-rain percentiles** (from [#8]) — every source's run-up ranked
       against its own climatology, and the only reading a coordinate with no reports
-      gets. See [above](#antecedent-rain-vs-the-sites-own-climatology). #8 stays open
-      for the rest of it, below.
+      gets. See [above](#antecedent-rain-vs-the-sites-own-climatology).
+- [x] **Neighbor disclosure** ([#8]) — a coordinate with no reports is told which
+      reported sources are nearby and flagged when they disagree, rather than having
+      a read synthesized for it. Transferring a neighbor's read is deliberately not
+      built: inside one ERA5 cell it provably reproduces that neighbor's own answer,
+      and past one cell the premise that justified it stops holding.
+      See [above](#whos-nearby-neighbors).
 
 Planned — the issue is where the detail and the open questions live:
 
 - [ ] **MRMS radar cross-check** ([#18]) — report radar for the recent window beside
       the ERA5 fit, rather than refitting the model on it. The one the bake-off
       says is worth building.
-- [ ] **Neighbor disclosure** — the rest of [#8]: for a coordinate with no reports,
-      *name* the reported sources nearby (distance, type, verdict) and flag when
-      they disagree, rather than synthesizing a read for the pin. Transferring a
-      neighbor's read is not planned: inside one ERA5 cell it provably reproduces
-      that neighbor's own answer, and past one cell the "nearby, so similar"
-      premise is what stops holding.
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
 - [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,

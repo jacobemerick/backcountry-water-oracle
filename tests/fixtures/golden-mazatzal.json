@@ -140,7 +140,9 @@
           "n_years": 18,
           "median_in": 18.313
         }
-      }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false
     },
     {
       "name": "Castersen Seep",
@@ -261,7 +263,9 @@
           "n_years": 18,
           "median_in": 18.313
         }
-      }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false
     },
     {
       "name": "Chilson Spring",
@@ -385,7 +389,9 @@
           "n_years": 18,
           "median_in": 18.313
         }
-      }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false
     }
   ],
   "notes": []

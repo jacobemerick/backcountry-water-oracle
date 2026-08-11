@@ -925,6 +925,65 @@ def finalize_rain_only(b):
             "annual_precip": b["annual_precip"], "asof": b["asof_eff"],
             "n_harm": b["n_harm"], "rain_pct": b["rain_pct"]}
 
+# --------------------------------------------------------------------------- #
+# Neighbor disclosure (#8, second half)
+# ---------------------------------------------------------------------------
+# For a source with no verdict, the most useful thing left is what is NEARBY. The
+# engine names those sources and stops there -- it does not transfer their read.
+#
+# Why disclosure rather than transfer, since the issue originally asked for the
+# latter: re-running a neighbor's rain->flow mapping against this coordinate's
+# rain is arithmetically IDENTICAL to quoting the neighbor, because both sit in
+# one precip cell. ERA5's grid is ~9-11 km; the three worked-example sources span
+# 3.5 km and share a single series, so curval, every window_sum in hist, and pred
+# all come out bit-for-bit equal to the neighbor's own. The machinery would look
+# like it computed something and would not have. Past ~11 km the numbers finally
+# differ -- and that is exactly where "nearby, so similar" stops being credible.
+#
+# Two further blocks, if this is ever revisited: the empirical-Bayes arbitration
+# that makes pooling honest has no input when a source has no correlation vector
+# to disagree with, and a verdict needs pct_dry and the analog flow scores --
+# precisely the quantities that are always each source's own, never pooled.
+#
+# So: say who is near, say what THEY read, and say when they disagree with each
+# other -- because that disagreement is the real answer to "can I use one of
+# these as a stand-in", and it is always no.
+# --------------------------------------------------------------------------- #
+def neighbors_of(a, rows, radius_km):
+    """The REPORTED sources within radius_km of `a`, nearest first.
+
+    Each entry carries the neighbor's own numbers under its own name. Nothing is
+    combined, averaged or transferred: two neighbors produce two rows, not one
+    estimate. Other unreported sources are skipped -- a pin cannot inform a pin."""
+    out = []
+    for o in rows:
+        if o is a or o["n"] == 0:
+            continue
+        km = _haversine_km(a["lat"], a["lon"], o["lat"], o["lon"])
+        if km <= radius_km:
+            out.append({"name": o["name"], "distance_km": km, "n": o["n"],
+                        "type": o["type"], "pct_dry": o["pct_dry"],
+                        "verdict": running_phrase(o["pred"]),
+                        "predicted_flow": o["pred"]})
+    out.sort(key=lambda x: x["distance_km"])
+    return out
+
+def attach_neighbors(rows, radius_km):
+    """In place: give every source with no verdict its neighbors, everyone else an
+    empty list. Same key on every source, for the reason the rest of the payload
+    keeps its shape -- a consumer branches on n == 0, never on which keys exist.
+
+    Only sources WITHOUT a verdict get them populated. A reported source already
+    says what it borrowed from whom (best.borrowed / best.group_n), and repeating
+    every neighbor's row underneath it would bloat a payload the site fetches per
+    request to say nothing new."""
+    for a in rows:
+        near = neighbors_of(a, rows, radius_km) if a["n"] == 0 else []
+        a["neighbors"] = near
+        # Disagreement is the headline, not a footnote: if the nearby sources do
+        # not even agree on what KIND of source they are, no stand-in is safe.
+        a["neighbors_disagree"] = len({o["type"] for o in near}) > 1
+
 def analyze(src, asof, use_cache=True, n_harm=1, provider=None):
     """Single-source convenience (no pooling): base pass then finalize.
     None when the source has nothing inside the precip record (see excluded_note).
@@ -982,6 +1041,24 @@ def print_rain_only_source(a):
     print("  NO FLOW VERDICT -- with no usable reports there is nothing to learn")
     print("  how this source answers rain, and rain alone does not decide it.")
     print_rain_block(a)
+    print_neighbors(a)
+
+def print_neighbors(a):
+    """Who is nearby and what THEY read. Never combined into a read for this one."""
+    if not a["neighbors"]:
+        print("\n  No reported sources nearby -- the rain above is all there is.")
+        return
+    print("\n  NEARBY REPORTED SOURCES -- their own reads, NOT this coordinate's:")
+    for o in a["neighbors"]:
+        # Type is never truncated -- the longest is "Reliable (groundwater-buffered)"
+        # at 31, and cutting it drops the paren, which reads like a rendering bug.
+        print(f"     {o['distance_km']:>5.2f} km  {o['name'][:26]:<28}"
+              f"{o['pct_dry']:>3}% dry  {o['type']:<33}{o['verdict']}")
+    if a["neighbors_disagree"]:
+        print("     ^ these disagree about what KIND of source they are, so none of")
+        print("       them is a safe stand-in for this one.")
+    else:
+        print("     ^ a nearby source is not this source. Same rain, different ground.")
 
 def print_source(a):
     if a["n"] == 0:
@@ -1123,6 +1200,19 @@ def source_json(a):
         # Rain vs this site's own record, for every source -- and the ONLY analysis
         # available when n == 0. Never a flow verdict: see rain_percentiles().
         "rain_percentiles": rain_json(a["rain_pct"]),
+        # Nearby REPORTED sources, populated only where there is no verdict of our
+        # own (see attach_neighbors). Each entry is that source's own read, under
+        # its own name -- nothing here has been transferred onto this coordinate,
+        # and `predicted_flow` above stays null regardless of what these say.
+        "neighbors": [{"name": o["name"], "distance_km": round(o["distance_km"], 2),
+                       "n": o["n"], "type": o["type"], "pct_dry": o["pct_dry"],
+                       "verdict": o["verdict"],
+                       "predicted_flow": _r4(o["predicted_flow"])}
+                      for o in a["neighbors"]],
+        # True when those neighbors do not agree on `type`. Derivable, and included
+        # anyway for the same reason `small_n` is: it is the thing a reader should
+        # lead with, and anything left to be derived is a thing everyone skips.
+        "neighbors_disagree": a["neighbors_disagree"],
     }
 
 def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
@@ -1252,7 +1342,13 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=N
             note("error", str(e), src["name"])
     if pool and len(bases) > 1:                  # needs >=2 sources to borrow
         pool_controlled(bases, radius_km)
-    return [finalize(b) if full else finalize_rain_only(b) for full, b in ordered]
+    rows = [finalize(b) if full else finalize_rain_only(b) for full, b in ordered]
+    # A fourth pass, because a neighbor's entry quotes its VERDICT -- which does
+    # not exist until every source has been through finalize(). Deliberately not
+    # gated on `pool`: --no-pool means "don't borrow correlation", and saying what
+    # is nearby is not borrowing. radius_km sets what counts as nearby for both.
+    attach_neighbors(rows, radius_km)
+    return rows
 
 def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
         use_cache=True, precip=None, notes=None, on_note=None):
