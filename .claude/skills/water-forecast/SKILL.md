@@ -105,9 +105,31 @@ a new input format — adapt the input to the schema instead.
    those reports and will otherwise wonder why `n` shrank. If a source is skipped
    entirely it lands in `notes` with the same explanation.
 
-   Always relay the ERA5/monsoon caveat for any summer (Jun–Sep AZ) go/no-go: the
-   model is the base rate, not "this week" — cross-check radar (MRMS via IEM, or
-   NWS AHPS precip) before committing.
+   For any summer (Jun–Sep AZ) go/no-go, the model is the base rate, not "this
+   week". **The engine now runs the radar cross-check itself** — read
+   `radar_check` rather than telling the user to go look at radar (see below).
+
+## The radar cross-check (`radar_check`)
+
+Each source carries a radar second opinion on the recent window, or `null` when it
+was unavailable or switched off:
+
+```json
+"radar_check": {"product": "iem:mrms", "windows": {
+  "30d": {"radar_in": 12.78, "model_in": 1.43, "ratio_to_model": 9.0}}}
+```
+
+- **Report it whenever `ratio_to_model` is ≥ ~1.5, and lead with it in monsoon
+  season.** "The model was fit on 1.43 inches over the last 30 days; radar saw
+  12.78 — nine times as much. Treat that verdict as a floor."
+- **It never changes the verdict, and neither should you.** The analog pool is
+  built from the model's own history, so a radar number can't be substituted into
+  it. Report both; don't reconcile them, and don't invent a corrected flow.
+- **`ratio_to_model` is `null` when the model read ~0.00"** — that's the *most*
+  important case, not a missing one. Say it in words: the model saw essentially
+  nothing and radar saw a storm.
+- `null` `radar_check` means no cross-check ran (outside CONUS, off, or the
+  service failed). Don't remark on it unless the user asks.
 
 ## Precip products (`--precip`) — leave it alone by default
 
