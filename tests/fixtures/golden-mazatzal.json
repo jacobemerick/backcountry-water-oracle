@@ -2,6 +2,7 @@
   "asof": "2026-07-13",
   "params": {
     "engine_version": "0.1.0",
+    "precip": "open-meteo",
     "pool": true,
     "pool_radius_km": 25.0,
     "harmonics": 1,
