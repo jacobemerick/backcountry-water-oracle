@@ -39,6 +39,10 @@ a new input format — adapt the input to the schema instead.
      truly absent, ask the user for them — the engine cannot run without them.
      Small disagreements between reporters (GPS scatter) are fine; just be
      consistent per source.
+     **A source with coordinates but no reports still belongs in the CSV** — write
+     one row with `date` and `score` blank (`Unnamed seep,34.09,-111.47,,`). The
+     engine answers with rain context and no verdict; see "Sources with no
+     reports" below. Never invent an observation to give it a row.
    - one row per dated observation: `date` (ISO) + a `score` (see rubric).
      **Reports before 2007 can't be used** — the precipitation record starts
      there. Include them anyway; the engine counts them rather than dropping
@@ -89,6 +93,7 @@ a new input format — adapt the input to the schema instead.
    | is the signal real | `best.signal_check`, `best.raw_r` vs `best.own_ctrl_r` |
    | how shaky | `small_n` (true = < 25 reports — flag it out loud) |
    | how much data was usable | `reports.total` vs `reports.used` |
+   | how unusual the run-up is | `rain_percentiles` (see below) |
 
    Two honesty rules: if `best.borrowed` is high (say > 0.5), **state that the
    read leans on neighbors** rather than the source's own record. And if
@@ -123,6 +128,49 @@ call?", not a better answer:
   `params.precip` matches on both. Same for `params.engine_version`.
 - Outside CONUS the `iem:*` products fail that source with an `error` note rather
   than quietly substituting ERA5 — if you see that, just re-run without the flag.
+
+## Antecedent rain (`rain_percentiles`) — context, never a verdict
+
+Every source carries each window's antecedent rain ranked against the same
+calendar window in every other year of its own record:
+`{"180d": {"inches": 4.15, "pct": 21, "n_years": 19, "median_in": 8.14}, ...}`.
+
+Use it to say **how unusual the run-up to this date has been** — that's something
+the verdict can't tell you, because the verdict is a base rate. One sentence is
+usually enough, and the source's `best.window` is the one worth quoting:
+
+> The last 180 days are in the 21st percentile for this date (4.15" vs a typical
+> 8.14") — a dry winter, though the year as a whole is ordinary (61st).
+
+Three rules:
+
+- **Never present it as a flow reading**, and never let it override `verdict`.
+  Wet ground is not water in the creek; the mapping from rain to flow is exactly
+  what the engine learns per-source from reports, and rain alone doesn't have it.
+  If the percentile and the verdict seem to disagree, report both and say the
+  verdict is the one built from this source's behavior.
+- **Don't quote a precise rank.** ~19 years means ~5-point steps. "Unusually
+  dry", "about normal", "unusually wet" is the honest resolution.
+- `pct` may be `null` (a window no earlier year covers) — say nothing rather than
+  guessing.
+
+## Sources with no reports
+
+A source with **no usable reports** — a bare pin, or one whose every report
+predates 2007 — still comes back in `sources`, with `n: 0` and every
+verdict-derived field `null` (`verdict`, `best`, `type`, `pct_dry`,
+`predicted_flow`, `precip_in`). `rain_percentiles` is populated.
+
+- **Check `n == 0` before speaking about a source.** Don't render a null verdict,
+  and don't fill the gap with your own guess from the rain numbers.
+- Say plainly what it is: *"nobody has reported on this one, so there's no flow
+  call — only that the last 60 days are in the 42nd percentile for this date."*
+- **The strongest thing you can offer is a neighbor**: if the CSV has a reported
+  source nearby, name it, give its verdict, and say how far away it is and that
+  it is a different source. Do this in your prose — the engine does not transfer
+  a read across sources, and you must not imply it did.
+- If the user wants a real answer for that pin, tell them what would produce one:
+  any dated observation at all, or reports from a nearby source to include.
 
 ## Scoring rubric (0.0 – 1.0)
 
@@ -168,8 +216,10 @@ feed it neighbors and explain what it did.
 ## CSV schema (the contract)
 
 `source,lat,lon,date,score[,status]` — score is a float 0.0–1.0; extra columns
-are ignored; rows with the same `source` name are treated as one source. This is
-the only thing the engine understands; everything above is about producing it.
+are ignored; rows with the same `source` name are treated as one source. A row
+with **both** `date` and `score` blank is a coordinate-only source (a pin); one
+of the two blank is rejected as a typo. This is the only thing the engine
+understands; everything above is about producing it.
 
 The engine takes this CSV as file path(s) or on stdin (`-`), and answers as the
 text report or as `--json`. It never learns an input format — if a new site's

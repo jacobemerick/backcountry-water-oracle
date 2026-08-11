@@ -187,6 +187,51 @@ class TestLoadSources(unittest.TestCase):
         self.assertEqual(len(srcs[0]["reports"]), 2)
 
 
+class TestCoordinateOnlyRows(unittest.TestCase):
+    """A row with date and score blank is a pin, not an observation (#8)."""
+    def load(self, text):
+        return forecast.load_sources_from([io.StringIO(text)], labels=["<t>"])
+
+    def test_a_blank_row_registers_a_source_with_no_reports(self):
+        srcs = self.load("source,lat,lon,date,score\nPin,34.09,-111.47,,\n")
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(srcs[0]["name"], "Pin")
+        self.assertEqual(srcs[0]["lat"], 34.09)
+        self.assertEqual(srcs[0]["reports"], [])
+
+    def test_whitespace_counts_as_blank(self):
+        srcs = self.load('source,lat,lon,date,score\nPin,34.09,-111.47,"  ","  "\n')
+        self.assertEqual(srcs[0]["reports"], [])
+
+    def test_a_pin_and_real_reports_can_share_a_name(self):
+        srcs = self.load("source,lat,lon,date,score\n"
+                         "S,34.09,-111.47,,\n"
+                         "S,34.09,-111.47,2024-01-01,1.0\n")
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(len(srcs[0]["reports"]), 1)
+
+    def test_a_date_with_no_score_is_a_typo_not_a_pin(self):
+        with self.assertRaises(ValueError) as cm:
+            self.load("source,lat,lon,date,score\nS,34.09,-111.47,2024-01-01,\n")
+        self.assertIn("line 2", str(cm.exception))
+        self.assertIn("no score", str(cm.exception))
+
+    def test_a_score_with_no_date_is_a_typo_too(self):
+        with self.assertRaises(ValueError) as cm:
+            self.load("source,lat,lon,date,score\nS,34.09,-111.47,,0.5\n")
+        self.assertIn("no date", str(cm.exception))
+
+    def test_the_error_says_how_to_ask_for_a_pin(self):
+        with self.assertRaises(ValueError) as cm:
+            self.load("source,lat,lon,date,score\nS,34.09,-111.47,,0.5\n")
+        self.assertIn("BOTH blank", str(cm.exception))
+
+    def test_a_short_row_is_still_a_pin_not_a_crash(self):
+        """DictReader fills missing trailing fields with None, not ''."""
+        srcs = self.load("source,lat,lon,date,score\nPin,34.09,-111.47\n")
+        self.assertEqual(srcs[0]["reports"], [])
+
+
 class TestCoordinateConflicts(unittest.TestCase):
     """Issue #9: the first row's coordinates used to win, silently."""
     def setUp(self):
@@ -960,6 +1005,86 @@ class TestWindowSum(unittest.TestCase):
         self.assertAlmostEqual(forecast.window_sum(idx, date(2024, 1, 3), 3), 3.0)
 
 
+# =========================================================================== #
+# Antecedent rain vs the site's own climatology -- issue #8
+# =========================================================================== #
+def year_index(first=2007, last=2026, daily=lambda y: 1.0):
+    """A precip index whose every day in year Y holds daily(Y), so a window's sum
+    is a known multiple of the year's value and percentiles can be reasoned about
+    by hand."""
+    days, vals = [], []
+    d, end = date(first, 1, 1), date(last, 12, 31)
+    while d <= end:
+        days.append(d.isoformat())
+        vals.append(daily(d.year))
+        d += timedelta(days=1)
+    return forecast.build_precip_index({"daily": {"time": days,
+                                                  "precipitation_sum": vals}})
+
+
+class TestRainPercentiles(unittest.TestCase):
+    ASOF = date(2026, 7, 13)
+
+    def test_the_wettest_run_up_on_record_is_the_top(self):
+        idx = year_index(daily=lambda y: float(y - 2006))      # each year wetter
+        got = forecast.rain_percentiles(idx, self.ASOF)["30d"]
+        self.assertEqual(got["pct"], 100.0)
+        self.assertAlmostEqual(got["inches"], 30 * 20.0)
+
+    def test_the_driest_is_the_bottom(self):
+        idx = year_index(daily=lambda y: float(2027 - y))       # each year drier
+        self.assertEqual(forecast.rain_percentiles(idx, self.ASOF)["30d"]["pct"], 0.0)
+
+    def test_a_perfectly_normal_year_lands_mid_scale(self):
+        """Every year identical: midrank puts it at 50, not 0 or 100. This is the
+        desert case -- a dry window in a place where most years are dry."""
+        idx = year_index(daily=lambda y: 1.0)
+        got = forecast.rain_percentiles(idx, self.ASOF)["30d"]
+        self.assertEqual(got["pct"], 50.0)
+        self.assertAlmostEqual(got["median_in"], got["inches"])
+
+    def test_the_as_of_year_is_not_in_its_own_comparison(self):
+        idx = year_index(2007, 2026)                            # 20 years of record
+        self.assertEqual(forecast.rain_percentiles(idx, self.ASOF)["30d"]["n_years"], 19)
+
+    def test_long_windows_are_ranked_against_fewer_years(self):
+        """A 365d window ending in July 2007 would reach into 2006, which the record
+        does not have -- so that year cannot be a comparison, and n_years says so."""
+        rain = forecast.rain_percentiles(year_index(2007, 2026), self.ASOF)
+        self.assertEqual(rain["30d"]["n_years"], 19)
+        self.assertEqual(rain["365d"]["n_years"], 18)
+
+    def test_no_comparison_years_at_all_is_none_not_a_crash(self):
+        rain = forecast.rain_percentiles(year_index(2026, 2026), self.ASOF)
+        self.assertIsNone(rain["30d"]["pct"])
+        self.assertIsNone(rain["30d"]["median_in"])
+        self.assertEqual(rain["30d"]["n_years"], 0)
+        self.assertGreater(rain["30d"]["inches"], 0)            # the sum is still real
+
+    def test_every_window_is_covered(self):
+        rain = forecast.rain_percentiles(year_index(), self.ASOF)
+        self.assertEqual(sorted(int(w[:-1]) for w in rain), sorted(forecast.WINDOWS))
+
+    def test_leap_day_does_not_explode(self):
+        """29 Feb has no counterpart in most years; one day's shift is far inside
+        the noise of a 30-day window, and raising would be absurd."""
+        self.assertEqual(forecast._same_day_of_year(date(2024, 2, 29), 2023),
+                         date(2023, 2, 28))
+        rain = forecast.rain_percentiles(year_index(), date(2024, 2, 29))
+        self.assertEqual(rain["30d"]["n_years"], 19)
+
+    def test_percentile_midranks_ties(self):
+        self.assertEqual(forecast._percentile_of(5, [1, 2, 3, 4]), 100.0)
+        self.assertEqual(forecast._percentile_of(0, [1, 2, 3, 4]), 0.0)
+        self.assertEqual(forecast._percentile_of(3, [1, 2, 4, 5]), 50.0)
+        self.assertEqual(forecast._percentile_of(2, [1, 2, 2, 5]), 50.0)
+
+    def test_ordinals(self):
+        got = [forecast._ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 100)]
+        self.assertEqual(got, ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th",
+                               "21st", "22nd", "100th"])
+
+
 class TestTrimDaily(unittest.TestCase):
     def series(self, n=10):
         start = date(2024, 1, 1)
@@ -1175,6 +1300,163 @@ class TestReportAccounting(OfflineTestCase):
 
 
 # =========================================================================== #
+# Zero-report mode: rain context where there is no verdict -- issue #8
+# =========================================================================== #
+class TestZeroReportMode(OfflineTestCase):
+    PIN = "source,lat,lon,date,score\nPin,34.09,-111.47,,\n"
+
+    def payload(self, csv):
+        return forecast.run(forecast.load_sources_from([io.StringIO(csv)]), ASOF)
+
+    def test_a_pin_reaches_the_payload_instead_of_vanishing(self):
+        s = self.payload(self.PIN)["sources"][0]
+        self.assertEqual(s["name"], "Pin")
+        self.assertEqual(s["n"], 0)
+        self.assertEqual(s["reports"]["total"], 0)
+
+    def test_every_verdict_field_is_null_not_missing(self):
+        """The site branches on n == 0; a half-filled verdict is what gets rendered
+        as a real one by accident."""
+        s = self.payload(self.PIN)["sources"][0]
+        for k in ("pct_dry", "mean_flow", "type", "best", "precip_in",
+                  "predicted_flow", "verdict"):
+            self.assertIsNone(s[k], k)
+        self.assertEqual(s["correlations"], [])
+        self.assertEqual(s["mean_flow_by_month"], {})
+
+    def test_the_keys_are_the_same_ones_a_reported_source_has(self):
+        """Same shape, so a consumer never has to ask which keys exist."""
+        both = self.payload(self.PIN + "S,34.09,-111.45,2024-01-01,1.0\n"
+                            "S,34.09,-111.45,2024-06-01,0.0\n")["sources"]
+        self.assertEqual(sorted(both[0]), sorted(both[1]))
+
+    def test_rain_context_is_real_where_the_verdict_is_not(self):
+        s = self.payload(self.PIN)["sources"][0]
+        self.assertEqual(sorted(int(w[:-1]) for w in s["rain_percentiles"]),
+                         sorted(forecast.WINDOWS))
+        for v in s["rain_percentiles"].values():
+            self.assertGreater(v["n_years"], 0)
+            self.assertIsNotNone(v["pct"])
+        self.assertGreater(s["annual_precip_in"], 0)     # precip, not reports
+
+    def test_reported_sources_get_the_rain_context_too(self):
+        """#8 explicitly: useful everywhere, not only where reports are missing."""
+        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        for s in payload["sources"]:
+            self.assertGreater(s["n"], 0)
+            self.assertTrue(s["rain_percentiles"])
+
+    def test_a_deliberate_pin_is_not_reported_as_a_skip(self):
+        """Asking what rain alone can say is the feature working, not a failure --
+        calling it a skip would teach everyone to ignore the word."""
+        self.assertEqual(self.payload(self.PIN)["notes"], [])
+
+    def test_but_reports_that_were_LOST_are_still_noted(self):
+        payload = self.payload("source,lat,lon,date,score\n"
+                               "Ancient,34.09,-111.47,1999-01-01,0.5\n")
+        self.assertEqual(payload["notes"][0]["kind"], "skip")
+        self.assertIn("predate", payload["notes"][0]["message"])
+        self.assertIn("no flow verdict", payload["notes"][0]["message"])
+        self.assertEqual(payload["sources"][0]["n"], 0)   # and it is still in there
+
+    def test_input_order_survives_a_mix(self):
+        payload = self.payload("source,lat,lon,date,score\n"
+                               "First,34.09,-111.45,2024-01-01,1.0\n"
+                               "First,34.09,-111.45,2024-06-01,0.0\n"
+                               "Second,34.09,-111.47,,\n"
+                               "Third,34.09,-111.49,2024-01-01,1.0\n"
+                               "Third,34.09,-111.49,2024-06-01,0.0\n")
+        self.assertEqual([s["name"] for s in payload["sources"]],
+                         ["First", "Second", "Third"])
+
+    def test_a_pin_does_not_disturb_its_neighbours_pooling(self):
+        """It contributes no correlation, so it must not join a neighbourhood."""
+        alone = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        with open(EXAMPLE_CSV) as f:
+            with_pin = forecast.run(forecast.load_sources_from(
+                [io.StringIO(f.read() + "Pin,34.09,-111.47,,\n")]), ASOF)
+        by_name = {s["name"]: s for s in with_pin["sources"]}
+        for s in alone["sources"]:
+            self.assertEqual(by_name[s["name"]], s)
+
+    def test_analyze_still_returns_none_for_a_pin(self):
+        """The documented single-source API is unchanged: no reports, no analysis."""
+        self.assertIsNone(forecast.analyze(source(reports=[]), ASOF))
+
+    # -- the text report ----------------------------------------------------- #
+    def text(self, csv):
+        code, out, err = run_cli(["-", "--asof", "2026-07-13"], stdin_text=csv)
+        return out
+
+    def test_the_report_says_there_is_no_verdict(self):
+        out = self.text(self.PIN)
+        self.assertIn("NO FLOW VERDICT", out)
+        self.assertIn("ANTECEDENT RAIN", out)
+        self.assertNotIn("VERDICT: ", out)               # never a running_phrase
+        for phrase in ("Likely DRY", "Likely flowing", "Probably has water",
+                       "Marginal"):
+            self.assertNotIn(phrase, out)
+
+    def test_the_rain_block_is_labelled_as_rain_not_flow(self):
+        out = self.text(self.PIN)
+        self.assertIn("RAIN, not flow", out)
+
+    def test_a_pin_is_listed_under_the_summary_not_inside_it(self):
+        out = self.text(self.PIN + "S,34.09,-111.45,2024-01-01,1.0\n"
+                        "S,34.09,-111.45,2024-06-01,0.0\n")
+        self.assertIn("NO VERDICT", out)
+        summary = out[out.index("SUMMARY"):]
+        table, listed = summary.split("NO VERDICT")
+        self.assertIn("S ", table)                       # the reported one has a row
+        self.assertNotIn("Pin", table)                   # the pin does not
+        self.assertIn("Pin", listed)
+
+    def test_a_report_of_only_pins_has_no_empty_table(self):
+        out = self.text(self.PIN + "Pin2,34.09,-111.45,,\n")
+        self.assertIn("NO VERDICT", out)
+        self.assertNotIn("%DRY", out)                    # no header over no rows
+
+    # -- where #8 meets #17 --------------------------------------------------- #
+    def rows(self, csv):
+        return forecast._analyse(
+            forecast.load_sources_from([io.StringIO(csv)]), ASOF, True, 1, True,
+            forecast.POOL_RADIUS_KM, lambda *a: None)
+
+    def table(self, csv, precip):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            forecast.print_table(self.rows(csv), precip)
+        return out.getvalue()
+
+    def test_the_precip_footer_still_lands_beside_a_pin(self):
+        """#17 made the footer name the product; #8 can leave the table empty. The
+        caveat is about the rain percentiles too, so it must print either way."""
+        mixed = self.table(self.PIN + "S,34.09,-111.45,2024-01-01,1.0\n"
+                           "S,34.09,-111.45,2024-06-01,0.0\n", "iem:mrms")
+        self.assertIn("iem:mrms", mixed)
+        self.assertNotIn("Reminder: ERA5", mixed)
+
+    def test_the_precip_footer_prints_even_with_no_verdicts_at_all(self):
+        pins_only = self.table(self.PIN + "Pin2,34.09,-111.45,,\n", "iem:mrms")
+        self.assertNotIn("%DRY", pins_only)              # no table
+        self.assertIn("NO VERDICT", pins_only)
+        self.assertIn("iem:mrms", pins_only)             # ...but the product is named
+
+    def test_the_default_footer_survives_a_pin_too(self):
+        pins_only = self.table(self.PIN, forecast.DEFAULT_PRECIP)
+        self.assertIn("Reminder: ERA5", pins_only)
+
+    def test_a_pin_gets_the_product_caveat_like_anything_else(self):
+        """A rain-only source is still fit on whatever product answered, so the
+        run-wide caveat has to reach a payload that contains nothing but pins."""
+        forecast.PRECIP_PROVIDER = forecast.iem_prism_provider
+        notes = []
+        forecast._analyse([], ASOF, True, 1, True, 25.0,
+                          lambda k, m, n=None: notes.append(k))
+        self.assertEqual(notes, ["caveat"])
+
+
+# =========================================================================== #
 # CLI behaviour: exit codes, stream routing, JSON validity
 # =========================================================================== #
 class TestCLI(OfflineTestCase):
@@ -1228,7 +1510,11 @@ class TestCLI(OfflineTestCase):
         ])
         code, out, err = run_cli([p, "--asof", "2026-07-13", "--json"])
         payload = json.loads(out)
-        self.assertEqual(len(payload["sources"]), 1)
+        # Since #8 the unusable source stays in the payload (with rain context and a
+        # null verdict) rather than vanishing -- but it is still noted, and the note
+        # still goes to stderr so stdout stays valid JSON.
+        self.assertEqual([s["name"] for s in payload["sources"]], ["Ancient", "Good"])
+        self.assertIsNone(payload["sources"][0]["verdict"])
         self.assertEqual(len(payload["notes"]), 1)
         self.assertEqual(payload["notes"][0]["kind"], "skip")
         self.assertIn("predate", payload["notes"][0]["message"])
@@ -1287,9 +1573,11 @@ class TestRun(OfflineTestCase):
         _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
         self.assertEqual(payload, json.loads(out))
 
-    def test_a_source_with_nothing_usable_is_skipped_not_crashed(self):
+    def test_a_source_with_nothing_usable_gets_no_verdict_not_a_crash(self):
         """The exact production failure: zero usable reports used to reach
-        finalize() and raise KeyError: 'ctrl'."""
+        finalize() and raise KeyError: 'ctrl'. Since #8 such a source reaches the
+        payload deliberately -- with rain context and a null verdict -- so this
+        also guards the path that now has to build one."""
         p = write_csv(self.tmp, "old.csv", [
             "Ancient,34.09,-111.47,1999-01-01,0.5",
             "Ancient,34.09,-111.47,2001-01-01,0.5",
@@ -1297,7 +1585,11 @@ class TestRun(OfflineTestCase):
             "Good,34.09,-111.45,2024-06-01,0.0",
         ])
         payload = forecast.run(self.sources(p), ASOF)
-        self.assertEqual([s["name"] for s in payload["sources"]], ["Good"])
+        self.assertEqual([s["name"] for s in payload["sources"]], ["Ancient", "Good"])
+        ancient = payload["sources"][0]
+        self.assertEqual(ancient["n"], 0)
+        self.assertIsNone(ancient["verdict"])
+        self.assertTrue(ancient["rain_percentiles"])         # ...but rain is there
         self.assertEqual(len(payload["notes"]), 1)
         self.assertEqual(payload["notes"][0]["kind"], "skip")
         self.assertEqual(payload["notes"][0]["source"], "Ancient")
@@ -1380,7 +1672,17 @@ class TestJsonSchema(OfflineTestCase):
         self.assertEqual(sorted(self.src), sorted([
             "name", "lat", "lon", "n", "small_n", "reports", "pct_dry", "mean_flow",
             "annual_precip_in", "type", "mean_flow_by_month", "correlations", "best",
-            "asof", "precip_in", "predicted_flow", "verdict", "harmonics"]))
+            "asof", "precip_in", "predicted_flow", "verdict", "harmonics",
+            "rain_percentiles"]))
+
+    def test_rain_percentile_rows_cover_every_window(self):
+        rain = self.src["rain_percentiles"]
+        self.assertEqual(sorted(int(w[:-1]) for w in rain), sorted(forecast.WINDOWS))
+        for w, v in rain.items():
+            self.assertEqual(sorted(v), ["inches", "median_in", "n_years", "pct"])
+            self.assertGreaterEqual(v["pct"], 0)
+            self.assertLessEqual(v["pct"], 100)
+            self.assertGreater(v["n_years"], 0)
 
     def test_best_keys(self):
         self.assertEqual(sorted(self.src["best"]), sorted([
@@ -1470,6 +1772,15 @@ class TestGolden(OfflineTestCase):
         c180 = next(c for c in castersen["correlations"] if c["window"] == "180d")
         self.assertGreater(c180["raw_r"], 0.70)
         self.assertLess(abs(c180["ctrl_r"]), 0.15)
+
+        # #8, and quoted in the README: a dry winter (180d, 21st pct) sitting inside
+        # an ordinary year (365d, 61st) -- the reading the verdict alone can't give.
+        rain = castersen["rain_percentiles"]
+        self.assertEqual(rain["180d"]["pct"], 21)
+        self.assertEqual(rain["365d"]["pct"], 61)
+        self.assertEqual(rain["180d"]["n_years"], 19)
+        # all three share one ERA5 cell, so the rain context is identical
+        self.assertEqual(chilson["rain_percentiles"], rain)
 
 
 # =========================================================================== #

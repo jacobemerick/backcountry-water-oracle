@@ -102,7 +102,45 @@
       "precip_in": 0.548,
       "predicted_flow": 0.36,
       "verdict": "Probably has water (light flow / pools)",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 0.548,
+          "pct": 58,
+          "n_years": 19,
+          "median_in": 0.387
+        },
+        "60d": {
+          "inches": 0.863,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.277
+        },
+        "90d": {
+          "inches": 1.352,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.805
+        },
+        "180d": {
+          "inches": 4.152,
+          "pct": 21,
+          "n_years": 19,
+          "median_in": 8.137
+        },
+        "270d": {
+          "inches": 10.938,
+          "pct": 39,
+          "n_years": 18,
+          "median_in": 12.184
+        },
+        "365d": {
+          "inches": 21.563,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 18.313
+        }
+      }
     },
     {
       "name": "Castersen Seep",
@@ -185,7 +223,45 @@
       "precip_in": 0.863,
       "predicted_flow": 0.12,
       "verdict": "Marginal - pools/dripping at best",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 0.548,
+          "pct": 58,
+          "n_years": 19,
+          "median_in": 0.387
+        },
+        "60d": {
+          "inches": 0.863,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.277
+        },
+        "90d": {
+          "inches": 1.352,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.805
+        },
+        "180d": {
+          "inches": 4.152,
+          "pct": 21,
+          "n_years": 19,
+          "median_in": 8.137
+        },
+        "270d": {
+          "inches": 10.938,
+          "pct": 39,
+          "n_years": 18,
+          "median_in": 12.184
+        },
+        "365d": {
+          "inches": 21.563,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 18.313
+        }
+      }
     },
     {
       "name": "Chilson Spring",
@@ -271,7 +347,45 @@
       "precip_in": 1.352,
       "predicted_flow": 0.28,
       "verdict": "Marginal - pools/dripping at best",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 0.548,
+          "pct": 58,
+          "n_years": 19,
+          "median_in": 0.387
+        },
+        "60d": {
+          "inches": 0.863,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.277
+        },
+        "90d": {
+          "inches": 1.352,
+          "pct": 42,
+          "n_years": 19,
+          "median_in": 1.805
+        },
+        "180d": {
+          "inches": 4.152,
+          "pct": 21,
+          "n_years": 19,
+          "median_in": 8.137
+        },
+        "270d": {
+          "inches": 10.938,
+          "pct": 39,
+          "n_years": 18,
+          "median_in": 12.184
+        },
+        "365d": {
+          "inches": 21.563,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 18.313
+        }
+      }
     }
   ],
   "notes": []
