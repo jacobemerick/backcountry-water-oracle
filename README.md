@@ -210,7 +210,7 @@ comparable with everyone else's.
 python3 tests/test_forecast.py
 ```
 
-159 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+195 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
@@ -242,8 +242,8 @@ bump and a changelog entry:
 | `__version__` | also `--version`, also `params.engine_version` in the payload |
 
 **Everything else is internal** — anything underscore-prefixed, plus
-`analyze_base()`, `finalize()`, `pool_controlled()`, `run_json()`,
-`parse_args()`, and the layout of the text report. They're importable, because
+`analyze_base()`, `finalize()`, `finalize_rain_only()`, `pool_controlled()`,
+`run_json()`, `parse_args()`, and the layout of the text report. They're importable, because
 Python, but they move without notice. If you need one of them, that's worth an
 issue: it usually means a supported seam is missing, which is exactly how
 `load_sources_from()` and `run()` came to exist.
@@ -282,6 +282,18 @@ Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,"Dry"
 | `date` | ISO `YYYY-MM-DD` — reports outside the precip record (from 2007) can't be correlated and are excluded, reported as `reports.excluded_*` |
 | `score` | **float 0.0–1.0** — `0.0` = dry, `1.0` = max flow |
 | `status` | *(optional)* raw text, kept for provenance only |
+
+**A row with `date` *and* `score` blank is a coordinate-only source** — a pin, with
+no observation attached:
+
+```
+source,lat,lon,date,score
+Unnamed seep,34.09000,-111.47000,,
+```
+
+You get rain context and no verdict (see [below](#sources-with-no-usable-reports)).
+Leaving just one of the two blank is an error, not a pin — that's a typo, and
+guessing would silently change the record.
 
 Anything that can emit this CSV can drive the engine. The mapping from real-world
 report language to a `score` lives in the **skill's rubric** (see
@@ -331,7 +343,14 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
               "signal_check": "partly seasonal, real signal remains" },
     "asof": "2026-07-13", "precip_in": 0.863,
     "predicted_flow": 0.12, "verdict": "Marginal - pools/dripping at best",
-    "harmonics": 1
+    "harmonics": 1,
+    // antecedent rain ranked against this coordinate's OWN record for this
+    // day-of-year. Present for every source; the only analysis when n == 0.
+    "rain_percentiles": {
+      "60d":  { "inches": 0.863, "pct": 42, "n_years": 19, "median_in": 1.277 },
+      "180d": { "inches": 4.152, "pct": 21, "n_years": 19, "median_in": 8.137 }
+      // ...one entry per window
+    }
   }],
   "notes": []   // [{kind: "skip"|"error"|"caveat", source, message}, ...]
                 // caveat = a limitation of the run itself (source is null),
@@ -361,6 +380,70 @@ second-guess the headline without re-running the engine.
 - **POOL** (summary table) — what fraction of `r*` was borrowed from neighbors
   (`-` = no neighbors in range, or `--no-pool`). Each source's per-window table
   still shows its **own** raw and season-controlled r for full transparency.
+- **ANTECEDENT RAIN** — see below; rain context, never a verdict.
+
+## Antecedent rain vs the site's own climatology
+
+"0.86 inches in the last 60 days" means nothing on its own — it's a lot in one
+place and a drought in another, and a lot in April and nothing in August. So every
+source also gets each window's antecedent total **ranked against the same calendar
+window in every other year of that coordinate's record**:
+
+```
+  ANTECEDENT RAIN vs this site's own record, for ~Jul 13:
+      30d    0.55"   58th pct of 19 yrs   median 0.39"  ############
+      60d    0.86"   42nd pct of 19 yrs   median 1.28"  ########
+     180d    4.15"   21st pct of 19 yrs   median 8.14"  ####
+     365d   21.56"   61st pct of 18 yrs   median 18.31"  ############
+     ^ how unusual the run-up to this date has been -- RAIN, not flow.
+```
+
+That's a real reading of July 2026 in the Mazatzals that no single verdict
+carries: **a dry winter (180d, 21st percentile) sitting inside an ordinary year
+(365d, 61st)** — recharge missed, recent storms about normal.
+
+Two things to hold onto:
+
+- **It is not a flow verdict and must not be shown as one.** Wet ground isn't
+  water in the creek. The entire rest of this tool exists because the map from
+  rain to flow differs per source and has to be learned from that source's own
+  reports.
+- **~19 years is a small sample.** Percentiles land on ~5-point steps and the
+  tails are the least trustworthy part. Read it as "unusually dry / about normal /
+  unusually wet". `n_years` is in the payload because long windows are ranked
+  against fewer years — a 365-day window ending in July 2007 would reach into
+  2006, which the record doesn't have.
+
+Ties are midranked, so a bone-dry window in a place where a third of years are
+also bone-dry reads ~17th percentile rather than 0th.
+
+### Sources with no usable reports
+
+Rain needs no field reports, which makes this the only thing the engine can
+honestly say about a coordinate nobody has reported on. Drop a pin — a CSV row
+with `date` and `score` blank — and you get exactly that, and nothing more:
+
+```
+Unnamed seep   (34.09000, -111.47000)
+  reports: 0 usable   |   ~19"/yr
+  NO FLOW VERDICT -- with no usable reports there is nothing to learn
+  how this source answers rain, and rain alone does not decide it.
+```
+
+The same applies to a source whose every report falls outside the precip record —
+it used to disappear into `notes`, and now stays in the payload with rain context.
+
+**In `--json`, such a source keeps every key**, with the verdict-derived ones
+`null` (`pct_dry`, `mean_flow`, `type`, `best`, `precip_in`, `predicted_flow`,
+`verdict`) and the two containers empty (`correlations`, `mean_flow_by_month`).
+Nothing is *missing*, so a consumer branches on **`n == 0`** (equivalently
+`verdict === null`) rather than on which keys happen to exist. `rain_percentiles`,
+`annual_precip_in` and the `reports` accounting are real in both cases — they come
+from precipitation and from counting.
+
+A deliberate pin produces **no `skip` note**: asking what rain alone can say is the
+feature working. A source that *lost* reports still gets one, because that's
+information you didn't ask for.
 
 ## Multiple sources & pooling
 
@@ -425,16 +508,22 @@ Shipped:
 - [x] **Pluggable precip product** ([#17]) — `--precip {open-meteo,iem:prism,iem:mrms}`,
       ERA5 still the default. The bake-off that reshaped this issue found it is *not*
       a resolution upgrade; see [`--precip`](#choosing-a-precip-product---precip).
+- [x] **Antecedent-rain percentiles** — the first half of [#8]: every source's run-up
+      ranked against its own climatology, and the only reading a coordinate with no
+      reports gets. See [above](#antecedent-rain-vs-the-sites-own-climatology).
 
 Planned — the issue is where the detail and the open questions live:
 
 - [ ] **MRMS radar cross-check** ([#18]) — report radar for the recent window beside
       the ERA5 fit, rather than refitting the model on it. The one the bake-off
       says is worth building.
+- [ ] **Neighbor transfer** — the second half of [#8]: for a coordinate with no
+      reports, surface a *nearby* reported source's read, clearly labelled as the
+      neighbor's rather than as this coordinate's. Pooling doesn't give this for
+      free — it shrinks the correlation toward neighbors, but the analog read still
+      comes from each source's own reports.
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
 - [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
-- [ ] **Zero-report mode** — antecedent-rain percentile against a site's own
-      climatology, for a source with no field reports at all ([#8]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
       given ERA5 reaches 1940 ([#21]).
 

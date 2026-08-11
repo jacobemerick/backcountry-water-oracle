@@ -195,8 +195,24 @@ def _read_csv(f, label, sources):
                     f"({lat:.5f}, {lon:.5f}), {off_by:,.1f} km apart. Rows sharing a "
                     "name are treated as one source: rename one of them, or fix the "
                     "coordinates.")
-        sc = max(0.0, min(1.0, float(row["score"])))
-        s["reports"].append((date.fromisoformat(row["date"].strip()[:10]), sc))
+        # A row with BOTH date and score blank is a coordinate-only source: "here is
+        # a pin, tell me what you can". It registers the source and contributes no
+        # observation, which lands it in the same n == 0 path as a source whose every
+        # report fell outside the precip record -- rain context, no flow verdict (#8).
+        raw_date = (row["date"] or "").strip()
+        raw_score = (row["score"] or "").strip()
+        if not raw_date and not raw_score:
+            continue
+        if not raw_date or not raw_score:
+            # One of the two blank is a typo, not a request. Guessing (dropping the
+            # row, or scoring a dateless report) would silently change the record.
+            missing, given = (("date", "score") if not raw_date else ("score", "date"))
+            raise ValueError(
+                f"{label} line {reader.line_num}: source {name!r} has a {given} but "
+                f"no {missing}. Leave BOTH blank for a coordinate-only source (rain "
+                f"context, no verdict); fill both in for an observation.")
+        sc = max(0.0, min(1.0, float(raw_score)))
+        s["reports"].append((date.fromisoformat(raw_date[:10]), sc))
 
 def _load(labelled_streams):
     """The one loading path: consume (stream, label) pairs into finished sources.
@@ -547,6 +563,71 @@ def window_sum(idx, end, w):
     return hi - lo
 
 # --------------------------------------------------------------------------- #
+# Antecedent rain against the site's OWN climatology (#8)
+# ---------------------------------------------------------------------------
+# "0.86 inches in the last 60 days" means nothing on its own -- it is a lot in one
+# place and a drought in another, and a lot in April and nothing in August. Ranking
+# it against the same calendar window in every other year of this coordinate's
+# record turns it into a sentence a person can act on:
+#
+#     60-day rain here is in the 12th percentile for mid-August, across 19 years.
+#
+# It needs NO field reports, which is the point: it is the only thing the engine can
+# honestly say about a coordinate nobody has ever reported on. It is also worth
+# saying about a well-reported one -- the verdict is a base rate, and this is how
+# unusual the run-up to today has been.
+#
+# It is NOT a flow verdict and must never be presented as one. Wet ground is not
+# water in the creek: the whole reason the rest of this file exists is that the map
+# from rain to flow is different for every source and has to be learned from that
+# source's own reports.
+# --------------------------------------------------------------------------- #
+def _same_day_of_year(d, year):
+    """The same calendar day in another year. 29 Feb becomes 28 Feb rather than
+    raising -- one day's shift is far inside the noise of a 30-day window."""
+    try:
+        return d.replace(year=year)
+    except ValueError:
+        return d.replace(year=year, day=28)
+
+def _percentile_of(value, sample):
+    """Midrank percentile: ties count half. In a desert where a third of Augusts are
+    bone dry, a bone-dry August is the 17th percentile, not the 0th -- and it should
+    not read as drier than the years it exactly matches."""
+    below = sum(1 for v in sample if v < value)
+    tied = sum(1 for v in sample if v == value)
+    return 100.0 * (below + 0.5 * tied) / len(sample)
+
+def rain_percentiles(idx, asof):
+    """{window: {inches, pct, n_years, median_in}} for every window in WINDOWS.
+
+    Each window's antecedent sum at `asof`, ranked against the same window ending
+    on the same day-of-year in every OTHER year of the record. The as-of year is
+    excluded so the reading is compared against history rather than diluted by
+    itself, and a year is only usable when the whole window fits inside the record
+    -- so the long windows are ranked against fewer years than the short ones, and
+    `n_years` says how many. `pct` is None when no year qualifies at all.
+
+    ~19 years is a small sample: percentiles land on ~5-point steps and the tails
+    are the least trustworthy part. Read it as "unusually dry / about normal /
+    unusually wet", not as a precise rank."""
+    out = {}
+    for w in WINDOWS:
+        sample = []
+        for year in range(idx["first"].year, idx["last"].year + 1):
+            if year == asof.year:
+                continue
+            end = _same_day_of_year(asof, year)
+            if end > idx["last"] or end - timedelta(days=w) < idx["first"]:
+                continue                      # window runs off the end of the record
+            sample.append(window_sum(idx, end, w))
+        cur = window_sum(idx, asof, w)
+        out[f"{w}d"] = {"inches": cur, "n_years": len(sample),
+                        "pct": _percentile_of(cur, sample) if sample else None,
+                        "median_in": _median(sample) if sample else None}
+    return out
+
+# --------------------------------------------------------------------------- #
 # Stats: Spearman = Pearson on average ranks (stdlib only)
 # --------------------------------------------------------------------------- #
 def _ranks(xs):
@@ -775,8 +856,14 @@ def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None):
     n_late = sum(1 for d, _ in src["reports"] if d > idx["last"])
     counts = {"n_total": n_total, "n_early": n_early, "n_late": n_late,
               "precip_first": idx["first"], "precip_last": idx["last"]}
+    # Rain context, for every source: it needs no reports, so it is computed before
+    # the n == 0 exit rather than inside the analysis that n == 0 skips.
+    asof_eff = min(asof, idx["last"])
+    common = dict(counts, name=src["name"], lat=src["lat"], lon=src["lon"],
+                  annual_precip=idx["annual"], rain_pct=rain_percentiles(idx, asof_eff),
+                  asof_eff=asof_eff, n_harm=n_harm)
     if n == 0:
-        return dict(counts, name=src["name"], lat=src["lat"], lon=src["lon"], n=0)
+        return dict(common, n=0)
     pct_dry = round(100 * sum(1 for v in y if v == 0) / n)
     feats = {f"{w}d": [window_sum(idx, d, w) for d, _ in recs] for w in WINDOWS}
     raw = {name: spearman(xs, y) for name, xs in feats.items()}
@@ -787,12 +874,11 @@ def analyze_base(src, asof, use_cache=True, n_harm=1, provider=None):
     bym = {}
     for d, s in recs:
         bym.setdefault(d.month, []).append(s)
-    return dict(counts,
-                name=src["name"], lat=src["lat"], lon=src["lon"],
+    return dict(common,
                 n=n, pct_dry=pct_dry, mean=sum(y) / n,
-                annual_precip=idx["annual"], raw=raw, ctrl=ctrl,
+                raw=raw, ctrl=ctrl,
                 pooled_ctrl=dict(ctrl), borrowed={k: 0.0 for k in ctrl},
-                group_n=1, n_harm=n_harm,
+                group_n=1,
                 idx=idx, recs=recs, asof_req=asof,
                 by_month={m: sum(v) / len(v) for m, v in sorted(bym.items())})
 
@@ -822,7 +908,22 @@ def finalize(b):
             "borrowed_at_best": b["borrowed"][best], "group_n": b["group_n"],
             "type": classify(b["pct_dry"], best_w),
             "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": b["n_harm"],
-            "by_month": b["by_month"]}
+            "by_month": b["by_month"], "rain_pct": b["rain_pct"]}
+
+def finalize_rain_only(b):
+    """finalize()'s counterpart for a source with no usable reports (#8).
+
+    Everything a verdict is built from is absent -- there is no correlation to pick
+    a window with, and no report history to read an analog flow off -- so this
+    carries only what precipitation alone can support. It is a separate function
+    rather than a branch inside finalize() because the two produce genuinely
+    different objects, and a half-filled verdict dict is exactly the thing that
+    gets rendered as a verdict by accident."""
+    return {"name": b["name"], "lat": b["lat"], "lon": b["lon"], "n": 0,
+            "n_total": b["n_total"], "n_early": b["n_early"], "n_late": b["n_late"],
+            "precip_first": b["precip_first"], "precip_last": b["precip_last"],
+            "annual_precip": b["annual_precip"], "asof": b["asof_eff"],
+            "n_harm": b["n_harm"], "rain_pct": b["rain_pct"]}
 
 def analyze(src, asof, use_cache=True, n_harm=1, provider=None):
     """Single-source convenience (no pooling): base pass then finalize.
@@ -850,7 +951,41 @@ def excluded_note(a):
             + (" -- so n, %dry and mean below describe the usable ones"
                if kept else ""))
 
+def _ordinal(n):
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+def print_rain_block(a):
+    """The antecedent-rain percentiles, with the label doing the work of keeping
+    them from being read as a verdict."""
+    when = a["asof"].strftime("%b %d")
+    print(f"\n  ANTECEDENT RAIN vs this site's own record, for ~{when}:")
+    for w in WINDOWS:
+        v = a["rain_pct"][f"{w}d"]
+        if v["pct"] is None:
+            print(f"     {w:>3}d  {v['inches']:>6.2f}\"   (no earlier year covers "
+                  "this window)")
+            continue
+        bar = "#" * int(round(v["pct"] / 5.0))
+        print(f"     {w:>3}d  {v['inches']:>6.2f}\"   {_ordinal(round(v['pct'])):>4} pct "
+              f"of {v['n_years']} yrs   median {v['median_in']:.2f}\"  {bar}")
+    print("     ^ how unusual the run-up to this date has been -- RAIN, not flow.")
+
+def print_rain_only_source(a):
+    """A source with no usable reports: everything the engine can honestly say."""
+    print(f"\n{'='*74}\n{a['name']}   ({a['lat']:.5f}, {a['lon']:.5f})")
+    print(f"  reports: 0 usable   |   ~{a['annual_precip']:.0f}\"/yr")
+    excl = excluded_note(a)
+    if excl:
+        print(f"  NOTE: {excl}")
+    print("  NO FLOW VERDICT -- with no usable reports there is nothing to learn")
+    print("  how this source answers rain, and rain alone does not decide it.")
+    print_rain_block(a)
+
 def print_source(a):
+    if a["n"] == 0:
+        return print_rain_only_source(a)
     print(f"\n{'='*74}\n{a['name']}   ({a['lat']:.5f}, {a['lon']:.5f})")
     print(f"  reports: {a['n']}   |   {a['pct_dry']}% ever dry   |   "
           f"mean flow {a['mean']:.2f} (0-1)   |   ~{a['annual_precip']:.0f}\"/yr")
@@ -880,24 +1015,41 @@ def print_source(a):
           f"nearest-analog flow ~{a['pred']:.2f} (0-1)")
     print(f"  VERDICT: {running_phrase(a['pred'])}"
           + ("   [small n - weak confidence]" if a['n'] < 25 else ""))
+    print_rain_block(a)
 
 def print_table(rows, precip=DEFAULT_PRECIP):
     print(f"\n{'='*74}\nSUMMARY  (most reliable first)\n")
-    rows = sorted(rows, key=lambda a: a["pct_dry"])
-    h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}{'POOL':>6}   {'AS-OF READ'}"
-    print(h); print("-" * len(h))
-    for a in rows:
-        nm = (a["name"][:24] + "..") if len(a["name"]) > 26 else a["name"]
-        pool = (f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-").rjust(6)
-        print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}{a['best_ctrl_r']:>+7.2f}{pool}   "
-              f"{running_phrase(a['pred'])}")
-    print("\nr* = season-controlled Spearman (day-of-year removed), POOLED toward nearby")
-    print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
-    print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
-    print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
+    # A source with no usable reports has no %-dry to rank by and no read to show,
+    # so it cannot have a row here. Listed separately below instead -- inventing a
+    # row for it would put a blank where every other line carries a verdict.
+    rain_only = [a for a in rows if a["n"] == 0]
+    scored = sorted((a for a in rows if a["n"] > 0), key=lambda a: a["pct_dry"])
+    if scored:
+        h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}{'POOL':>6}   {'AS-OF READ'}"
+        print(h); print("-" * len(h))
+        for a in scored:
+            nm = (a["name"][:24] + "..") if len(a["name"]) > 26 else a["name"]
+            pool = (f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-").rjust(6)
+            print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}"
+                  f"{a['best_ctrl_r']:>+7.2f}{pool}   {running_phrase(a['pred'])}")
+    if rain_only:
+        wname = f"{WINDOWS[1]}d"
+        print(f"\nNO VERDICT -- no usable reports. Rain context only (in full above):")
+        for a in rain_only:
+            v = a["rain_pct"][wname]
+            pct = "n/a" if v["pct"] is None else f"{_ordinal(round(v['pct']))} pct"
+            print(f"  {a['name'][:38]:<40}{wname} rain {v['inches']:>5.2f}\" = "
+                  f"{pct} for this date")
+    if scored:
+        print("\nr* = season-controlled Spearman (day-of-year removed), POOLED toward nearby")
+        print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
+        print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
+        print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
     # The standing monsoon caveat is about ERA5 specifically, so it stops being
     # true the moment --precip picks something else -- say which product answered
     # instead, and let the [caveat] note above carry that product's own limits.
+    # It applies to the rain percentiles as much as to the verdicts, so it is
+    # printed even when every source here is rain-only.
     if precip == DEFAULT_PRECIP:
         print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
     else:
@@ -913,8 +1065,26 @@ def print_table(rows, precip=DEFAULT_PRECIP):
 def _r4(x):
     return round(x, 4)
 
+def rain_json(rain):
+    """Antecedent rain vs the site's own climatology, per window (#8).
+    `pct` is rounded to a whole number: ~19 years cannot support a decimal."""
+    return {w: {"inches": round(v["inches"], 3),
+                "pct": None if v["pct"] is None else round(v["pct"]),
+                "n_years": v["n_years"],
+                "median_in": None if v["median_in"] is None else round(v["median_in"], 3)}
+            for w, v in rain.items()}
+
 def source_json(a):
-    ctrl = dict(a["ctrl_cors"])
+    """One source, as the payload sees it.
+
+    A source with no usable reports keeps EVERY key. The verdict-derived ones are
+    null (empty for the two containers), never absent, so a consumer branches on
+    `n == 0` -- equivalently `verdict is None` -- instead of on which keys happen
+    to exist. `rain_percentiles`, `annual_precip_in` and the report accounting are
+    real in both cases: they come from precipitation and from counting, neither of
+    which needs a usable report."""
+    zero = a["n"] == 0
+    ctrl = {} if zero else dict(a["ctrl_cors"])
     return {
         "name": a["name"], "lat": a["lat"], "lon": a["lon"],
         "n": a["n"], "small_n": a["n"] < 25,
@@ -925,17 +1095,20 @@ def source_json(a):
                     "excluded_after_precip": a["n_late"],
                     "precip_span": [a["precip_first"].isoformat(),
                                     a["precip_last"].isoformat()]},
-        "pct_dry": a["pct_dry"],
-        "mean_flow": _r4(a["mean"]),
+        "pct_dry": None if zero else a["pct_dry"],
+        "mean_flow": None if zero else _r4(a["mean"]),
         "annual_precip_in": round(a["annual_precip"], 2),
-        "type": a["type"],
-        "mean_flow_by_month": {str(m): _r4(v) for m, v in a["by_month"].items()},
+        "type": None if zero else a["type"],
+        "mean_flow_by_month": {} if zero else
+                              {str(m): _r4(v) for m, v in a["by_month"].items()},
         # per-window, strongest raw first -- each source's OWN numbers
-        "correlations": [{"window": name, "days": int(name[:-1]),
+        "correlations": [] if zero else
+                        [{"window": name, "days": int(name[:-1]),
                           "raw_r": _r4(r), "ctrl_r": _r4(ctrl[name])}
                          for r, name in a["cors"]],
         # the window the verdict was read at; `r` is pooled, `own_ctrl_r` is not
-        "best": {"window": a["best"], "days": int(a["best"][:-1]),
+        "best": None if zero else
+                {"window": a["best"], "days": int(a["best"][:-1]),
                  "r": _r4(a["best_ctrl_r"]),
                  "own_ctrl_r": _r4(a["best_own_ctrl_r"]),
                  "raw_r": _r4(a["best_raw_r"]),
@@ -943,10 +1116,13 @@ def source_json(a):
                  "group_n": a["group_n"],
                  "signal_check": survival_note(a["best_raw_r"], a["best_own_ctrl_r"])},
         "asof": a["asof"].isoformat(),
-        "precip_in": round(a["curval"], 3),
-        "predicted_flow": _r4(a["pred"]),
-        "verdict": running_phrase(a["pred"]),
+        "precip_in": None if zero else round(a["curval"], 3),
+        "predicted_flow": None if zero else _r4(a["pred"]),
+        "verdict": None if zero else running_phrase(a["pred"]),
         "harmonics": a["n_harm"],
+        # Rain vs this site's own record, for every source -- and the ONLY analysis
+        # available when n == 0. Never a flow verdict: see rain_percentiles().
+        "rain_percentiles": rain_json(a["rain_pct"]),
     }
 
 def run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
@@ -1049,21 +1225,34 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=N
         # Said once per run, not once per source, and before the first fetch -- it
         # is a property of the product the user asked for, not of any one spring.
         note("caveat", caveat)
-    bases = []
+    bases, ordered = [], []
     for src in sources:
         try:
             b = analyze_base(src, asof, use_cache, n_harm, provider)
-            if b is None or b["n"] == 0:
-                # Say WHY: "you gave me nothing" and "all your data predates my
-                # precipitation record" are very different problems for the author.
-                note("skip", excluded_note(b) if b else "no reports", src["name"])
+            if b is None:
+                note("skip", "no reports", src["name"])
+                continue
+            if b["n"] == 0:
+                # No verdict -- but since #8 that is no longer the end of the story:
+                # the source still gets its rain percentiles, so it stays in the
+                # payload (in input order) instead of vanishing into the notes.
+                #
+                # A note only when reports were LOST. A coordinate-only row is the
+                # user deliberately asking what rain alone can say, and calling that
+                # a skip would train everyone to ignore the word.
+                excl = excluded_note(b)
+                if excl:
+                    note("skip", excl + " -- no flow verdict, rain context only",
+                         src["name"])
+                ordered.append((False, b))
                 continue
             bases.append(b)
+            ordered.append((True, b))
         except Exception as e:
             note("error", str(e), src["name"])
     if pool and len(bases) > 1:                  # needs >=2 sources to borrow
         pool_controlled(bases, radius_km)
-    return [finalize(b) for b in bases]
+    return [finalize(b) if full else finalize_rain_only(b) for full, b in ordered]
 
 def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
         use_cache=True, precip=None, notes=None, on_note=None):
