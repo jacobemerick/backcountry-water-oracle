@@ -37,6 +37,7 @@ python3 forecast.py sources.csv --no-cache                    # force precip re-
 python3 forecast.py area.csv --pool-radius 15                 # neighbor radius km (pooling)
 python3 forecast.py area.csv --no-pool                        # analyze each source alone
 python3 forecast.py az.csv --precip iem:mrms                  # a different precip product
+python3 forecast.py area.csv --radar none                     # skip the radar cross-check
 cat area.csv | python3 forecast.py -                          # read the CSV from stdin
 python3 forecast.py area.csv --json                           # machine-readable output
 ```
@@ -210,7 +211,7 @@ comparable with everyone else's.
 python3 tests/test_forecast.py
 ```
 
-213 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
+231 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
 on ERA5 not being revised. A golden test compares the entire `--json` payload for
@@ -237,6 +238,7 @@ bump and a changelog entry:
 | `analyze(src, asof, …)` | single source, no pooling |
 | `PRECIP_PROVIDER`, `open_meteo_provider(…)`, `CACHE_DIR` | the precip seam |
 | `PRECIP_PROVIDERS`, `resolve_precip(name)`, `precip_name(provider)` | the named built-ins, and what a payload calls them |
+| `RADAR_PROVIDER`, `resolve_radar(name)` | the radar cross-check seam; `None` turns it off |
 | the **`--json` payload** | every key and its meaning |
 | the **CLI** | flags, `-`/stdin, exit codes (`0` ok, `1` no input, `2` bad input) |
 | `__version__` | also `--version`, also `params.engine_version` in the payload |
@@ -320,7 +322,7 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
 ```jsonc
 {
   "asof": "2026-07-13",
-  "params": { "engine_version": "0.1.0", "precip": "open-meteo",
+  "params": { "engine_version": "0.1.0", "precip": "open-meteo", "radar": "iem:mrms",
               "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
               "cache": true, "windows": [30, 60, 90, 180, 270, 365] },
   "sources": [{
@@ -353,7 +355,13 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
     },
     // nearby REPORTED sources, populated only when n == 0. Their own reads,
     // never transferred onto this coordinate. [] for a source with a verdict.
-    "neighbors": [], "neighbors_disagree": false
+    "neighbors": [], "neighbors_disagree": false,
+    // a radar second opinion on the recent window; null when off/unavailable.
+    // Nothing above was computed from it. ratio_to_model is null when the
+    // model read rounds to 0.00".
+    "radar_check": { "product": "iem:mrms", "windows": {
+      "30d": { "radar_in": 12.78, "model_in": 1.43, "ratio_to_model": 9.0 },
+      "60d": { "radar_in": 14.07, "model_in": 1.45, "ratio_to_model": 9.7 } } }
   }],
   "notes": []   // [{kind: "skip"|"error"|"caveat", source, message}, ...]
                 // caveat = a limitation of the run itself (source is null),
@@ -384,6 +392,64 @@ second-guess the headline without re-running the engine.
   (`-` = no neighbors in range, or `--no-pool`). Each source's per-window table
   still shows its **own** raw and season-controlled r for full transparency.
 - **ANTECEDENT RAIN** — see below; rain context, never a verdict.
+
+## The radar cross-check (`--radar`)
+
+Every forecast used to end by telling you to go look at radar before a summer
+go/no-go. That instruction was an admission: ERA5 smooths convective cells, which
+is exactly when the answer matters most and is least trustworthy. **The engine now
+does that check itself**, per source, on the recent window:
+
+```
+  AS OF 2016-07-25:  365d rain = 15.16"  ->  nearest-analog flow ~0.24 (0-1)
+  VERDICT: Marginal - pools/dripping at best
+
+  RADAR CHECK (iem:mrms) -- NOT in anything above:
+      30d  radar  12.78"  vs model   1.43"   9.0x the model's figure
+      60d  radar  14.07"  vs model   1.45"   9.7x the model's figure
+     ^ the fit and the read above are the model's. Radar disagreeing
+       means treat them as a floor -- it does not correct them, because
+       the analog pool is built from the model's own history.
+```
+
+That's a real date. ERA5 recorded 1.43" over 30 days where radar saw 12.78" — a
+"Marginal" verdict that is almost certainly wrong, and now says so.
+
+**It sits beside the model and cannot move it.** The bake-off is why: the fit
+barely notices the product, while the as-of read moves enough to flip verdicts.
+Refitting on radar would buy nothing on the fit and pay MRMS's real cost — it's
+genuine only from ~2014, so the history and the analog pool would either truncate
+or silently mix radar with backfilled proxy. Reading *only the recent window*
+never touches that backfill. And comparing an MRMS current value against ERA5
+history is exactly the apples-to-oranges error to avoid, so the check informs the
+reader and never re-runs the match. There's a test asserting the whole payload is
+byte-identical with and without it, except for `radar_check` itself.
+
+- **Both short windows, 30d and 60d** — "did a storm just hit" is the only question
+  radar answers here.
+- **`ratio_to_model` is `null` when the model read rounds to 0.00"**, which is the
+  headline case rather than an edge case (the bake-off's worst day was ERA5 0.04"
+  against MRMS 3.66"). A ratio against zero would be arbitrary; the text says it
+  in words instead.
+- **It fails soft.** Outside CONUS, IEM having a bad day, your own callable
+  throwing — the line is simply absent and the forecast is unaffected. It also
+  doesn't retry, unlike the fit: retrying is right when the data is required and
+  wrong for an optional second opinion that would otherwise sleep through several
+  attempts per source to drop a line anyway.
+
+**Turning it off.** `--radar none`, or `RADAR_PROVIDER = None`. Do this if you're
+embedding on serverless: the default reads the recent window out of a
+full-history fetch, which a warm cache absorbs and a cold instance pays for. The
+seam takes your own callable too, so radar can come from your store rather than
+being switched off:
+
+```python
+forecast.RADAR_PROVIDER = None                    # off
+forecast.RADAR_PROVIDER = my_radar_provider       # or your own, same contract
+payload = forecast.run(sources, asof, radar="none")   # per-call
+```
+
+`params.radar` records which product cross-checked, or `"none"`.
 
 ## Antecedent rain vs the site's own climatology
 
@@ -516,12 +582,12 @@ its neighbors and gets rescued onto the rain window they validate, while buffere
 ## Trust it this much (limitations)
 
 1. **ERA5 (~9–11 km) smooths/misses isolated monsoon cells.** Trust the
-   winter-recharge signal; for a summer "did a storm just hit" call, still check
-   radar — [MRMS via IEM](https://mesonet.agron.iastate.edu/) or the
-   [NWS AHPS precip analysis](https://water.weather.gov/precip/). This is the
-   *base rate*; radar is *this week*. `--precip iem:mrms` will fit the whole model
-   on radar instead, but that trades one problem for another (pre-2014 backfill in
-   the analog pool) — reading radar *beside* the ERA5 model is [#18].
+   winter-recharge signal; for a summer "did a storm just hit" call, this is the
+   *base rate*, not *this week*. **The engine now runs that radar cross-check for
+   you** — see [below](#the-radar-cross-check---radar) — so the old advice to go
+   and eyeball MRMS by hand is retired. `--precip iem:mrms` would instead fit the
+   whole model on radar, which trades one problem for another (pre-2014 backfill
+   in the analog pool).
 2. **Season and rain are entangled** — more reports in wet, cool months. The tool
    controls for this: it removes the day-of-year cycle (annual-harmonic
    regression, learned per-site so it's hemisphere-correct) and reports a
@@ -558,12 +624,13 @@ Shipped:
       built: inside one ERA5 cell it provably reproduces that neighbor's own answer,
       and past one cell the premise that justified it stops holding.
       See [above](#whos-nearby-neighbors).
+- [x] **MRMS radar cross-check** ([#18]) — radar for the recent window reported
+      beside the ERA5 fit instead of refitting the model on it, which retires the
+      "go check radar yourself" caveat every forecast used to end with.
+      See [above](#the-radar-cross-check---radar).
 
 Planned — the issue is where the detail and the open questions live:
 
-- [ ] **MRMS radar cross-check** ([#18]) — report radar for the recent window beside
-      the ERA5 fit, rather than refitting the model on it. The one the bake-off
-      says is worth building.
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
 - [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
