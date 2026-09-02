@@ -29,7 +29,8 @@ Usage:
     python3 forecast.py area.csv --no-pool              # analyze each source alone
     python3 forecast.py az.csv --precip iem:mrms        # a different precip product
     cat area.csv | python3 forecast.py -                # read the CSV from stdin
-    python3 forecast.py area.csv --json                 # machine-readable output
+    python3 forecast.py area.csv --format markdown      # summary table for trip notes
+    python3 forecast.py area.csv --format json          # machine-readable output
 
 EMBEDDING IT (hosts):
     pip install backcountry-water-oracle     # or: pip install git+<repo>@v0.1.0
@@ -37,7 +38,7 @@ EMBEDDING IT (hosts):
     import backcountry_water_oracle as bwo
     bwo.PRECIP_PROVIDER = my_provider        # (lat, lon, end_date, use_cache)
     sources = bwo.load_sources_from([io.StringIO(request_body)])
-    payload = bwo.run(sources, asof)         # the same dict --json prints
+    payload = bwo.run(sources, asof)         # the same dict --format json prints
   Three seams, and between them a host needs nothing private and reimplements
   nothing. load_sources_from() takes CSV that never touched the filesystem;
   run() is main() minus the CLI, so a service gets the engine's real behaviour
@@ -48,12 +49,18 @@ EMBEDDING IT (hosts):
 
 PIPING IT AROUND:
   * `-` as a filename reads the CSV from stdin (and stdin is used automatically
-    when no files are given and stdin is not a terminal), so the engine drops
-    into a pipeline: your normalizer | forecast.py - --json | your consumer.
-  * `--json` prints one JSON object on stdout instead of the text report -- every
-    number the text report shows, unrounded-to-4dp, plus the run's parameters.
-    In --json mode all diagnostics ([skip]/[error]) go to stderr and are also
-    collected under "notes", so stdout stays valid JSON.
+    when no files are given and stdin is not a terminal), so the engine drops into
+    a pipeline: your normalizer | forecast.py - --format json | your consumer.
+  * `--format json` prints one JSON object on stdout instead of the text report --
+    every number the text report shows, unrounded-to-4dp, plus the run's
+    parameters. (Through 0.2.0 this was spelled `--json`, which 0.3.0 removed.)
+  * `--format markdown` prints the summary table alone, as Markdown, for pasting
+    into trip notes -- with the legend and the precip caveat, since a table read
+    months later somewhere else is the one that most needs them. The per-source
+    detail is not rendered; that is what `--format text` is for.
+  * Outside `--format text`, stdout carries only that output: diagnostics
+    ([skip]/[error]) go to stderr, and in JSON they are also collected under
+    "notes", so stdout stays valid JSON.
 
 Pure standard library -- zero runtime dependencies, installed or not.
 Precip: Open-Meteo ERA5 archive (free) by default; --precip picks another product.
@@ -90,9 +97,10 @@ from datetime import date, timedelta
 # metadata and the number reported by --version cannot drift apart.
 #
 # 0.x while the API is still moving. What a bump means:
-#   MAJOR/MINOR -- the Python API or the --json schema changed (see README,
-#                  "What's public"). While at 0.x, that is the minor field.
-#   PATCH       -- a fix that leaves both alone.
+#   MAJOR/MINOR -- the Python API, the JSON schema, or the CLI's flags changed
+#                  (see README, "What's public"). While at 0.x, that is the minor
+#                  field. Flags joined that list when --json was removed.
+#   PATCH       -- a fix that leaves all three alone.
 # A change to the METHOD -- pooling, season control, the analog read -- can move
 # verdicts without touching either surface, so those go in the changelog and are
 # stamped into every payload as params.engine_version. The golden test in
@@ -1267,59 +1275,207 @@ def print_source(a):
     print_radar_check(a)
     print_rain_block(a)
 
-def print_table(rows, precip=DEFAULT_PRECIP):
-    print(f"\n{'='*74}\nSUMMARY  (most reliable first)\n")
-    # A source with no usable reports has no %-dry to rank by and no read to show,
-    # so it cannot have a row here. Listed separately below instead -- inventing a
-    # row for it would put a blank where every other line carries a verdict.
+# --------------------------------------------------------------------------- #
+# The summary table, and the two ways it gets written down
+# ---------------------------------------------------------------------------
+# The table is the part that leaves the terminal (#20): it gets pasted into trip
+# notes and read months later, somewhere the run that produced it is no longer on
+# screen. So it is built once -- as cells and as prose -- and rendered twice,
+# rather than each emitter growing its own copy. That is not tidiness. The legend
+# and the monsoon caveat are the entire reason this table is safe to read away
+# from the report it came from, and a second hand-maintained copy of them is
+# exactly how one emitter quietly loses them.
+#
+# Markdown is the only format that landed. The same issue asked for HTML and it
+# was declined: a styled table is real presentation code -- escaping, layout, a
+# stylesheet -- inside an engine that has stayed stdlib-only and sterile, and
+# anything that wants HTML can render it from --format json, which is what the
+# site already does.
+# --------------------------------------------------------------------------- #
+SUMMARY_COLUMNS = ("SOURCE", "N", "%DRY", "BEST", "r*", "POOL", "AS-OF READ")
+
+# Column widths for the fixed-width emitter -- one per column EXCEPT the last,
+# which runs to the end of the line. Markdown ignores them and lets each cell be
+# as wide as its content.
+_TEXT_WIDTHS = (26, 4, 6, 7, 7, 6)
+
+_SUMMARY_LEGEND = (
+    "r* = season-controlled Spearman (day-of-year removed), POOLED toward nearby",
+    "sources where they agree -- the trustworthy one. POOL = % of r* borrowed from",
+    "neighbors ('-' = none in range; --no-pool disables pooling entirely).",
+    "Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.",
+)
+
+def summary_legend(scored):
+    """What the columns mean, for whichever rows are actually being shown.
+
+    The star line appears only when a row carries a star (#39). An unexplained "*"
+    is worse than no star at all, and a legend entry for a mark nobody can see is
+    noise -- so this keys off the rows rather than being printed unconditionally."""
+    lines = list(_SUMMARY_LEGEND)
+    if any(a["pred_is_constant"] for a in scored):
+        lines += [
+            f"* = read off every report the source has (n <= {ANALOG_K}), so it is the same",
+            "on every date and rain cannot move it -- the record, not a forecast.",
+        ]
+    return tuple(lines)
+
+def summary_sections(rows):
+    """The summary's two groups: scored sources (most reliable first), then the
+    rain-only ones. A source with no usable reports has no %-dry to rank by and no
+    read to show, so it cannot have a table row -- inventing one would put a blank
+    where every other line carries a verdict."""
     rain_only = [a for a in rows if a["n"] == 0]
     scored = sorted((a for a in rows if a["n"] > 0), key=lambda a: a["pct_dry"])
+    return scored, rain_only
+
+def summary_cells(a):
+    """One scored source as the seven strings SUMMARY_COLUMNS names, UNTRUNCATED.
+    Clipping is a property of a fixed-width terminal, not of the reading, so the
+    text emitter does its own -- a Markdown cell has no width to run out of, and a
+    name cut to "Big Kahuna Falls - Mazatza.." in trip notes is a name you have to
+    come back to the tool to resolve.
+
+    The trailing "*" is #39's, and it rides in the cell rather than in either
+    emitter on purpose. The table sorts by %DRY, so a source with one non-dry
+    report sorts to the TOP -- the least-evidenced read presented as the most
+    reliable -- and the pasted copy is the one read furthest from the evidence.
+    That makes it the last output that should be able to lose the mark."""
+    return (a["name"], str(a["n"]), f"{a['pct_dry']}%", a["best"],
+            f"{a['best_ctrl_r']:+.2f}",
+            f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-",
+            running_phrase(a["pred"]) + (" *" if a["pred_is_constant"] else ""))
+
+def rain_only_cells(a):
+    """One rain-only source as (name, window, inches, percentile). The inches are
+    formatted but NOT padded: the text emitter pads them so its decimal points line
+    up down the column, which a Markdown cell neither needs nor wants."""
+    wname = f"{WINDOWS[1]}d"
+    v = a["rain_pct"][wname]
+    pct = "n/a" if v["pct"] is None else f"{_ordinal(round(v['pct']))} pct"
+    return a["name"], wname, f"{v['inches']:.2f}", pct
+
+def rain_only_read(wname, inches, pct):
+    """The one sentence rain alone supports, shared so the two emitters cannot
+    come to word it differently."""
+    return f"{wname} rain {inches}\" = {pct} for this date"
+
+def summary_caveats(rows, precip=DEFAULT_PRECIP, standalone=False):
+    """The warnings this table must not be read without.
+
+    The standing monsoon caveat is about ERA5 specifically, so it stops being true
+    the moment --precip picks something else -- then it says which product answered
+    instead, and lets that product's own [caveat] note carry its limits. It applies
+    to the rain percentiles as much as to the verdicts, so it is emitted even when
+    every source here is rain-only.
+
+    `standalone` is for an emitter whose output is JUST this table. The text report
+    can point at the per-source blocks printed above it; a table pasted into trip
+    notes has nothing above it, so the same pointers degrade into instructions to
+    go and re-run a tool the reader may not have."""
+    if precip != DEFAULT_PRECIP:
+        if standalone:
+            return (f"Precip: {precip}, NOT the default ERA5. Don't compare these numbers "
+                    "against a run made with another product, and read that product's own "
+                    "caveat in the full report.",)
+        return (f"Precip: {precip}, NOT the default ERA5 -- see the [caveat] above, and",
+                "don't compare these numbers against a run made with another product.")
+    # ...and once the radar check has actually run, telling the reader to go and
+    # check radar by hand is telling them to redo what just happened. That
+    # instruction becoming obsolete is the entire point of #18.
+    if any(a["radar"] for a in rows):
+        if standalone:
+            return ("ERA5 misses monsoon cells. The full report cross-checks each source "
+                    "against radar for the recent window; where they disagree, read the "
+                    "verdict as a floor.",)
+        return ("ERA5 misses monsoon cells -- the RADAR CHECK under each source above is",
+                "that cross-check. Where it disagrees, read the verdict as a floor.")
+    return ("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).",)
+
+def print_table(rows, precip=DEFAULT_PRECIP):
+    """The fixed-width summary, printed under the per-source blocks."""
+    print(f"\n{'='*74}\nSUMMARY  (most reliable first)\n")
+    scored, rain_only = summary_sections(rows)
     if scored:
-        h = f"{'SOURCE':<26}{'N':>4}{'%DRY':>6}{'BEST':>7}{'r*':>7}{'POOL':>6}   {'AS-OF READ'}"
+        h = (SUMMARY_COLUMNS[0].ljust(_TEXT_WIDTHS[0])
+             + "".join(c.rjust(w) for c, w in zip(SUMMARY_COLUMNS[1:], _TEXT_WIDTHS[1:]))
+             + "   " + SUMMARY_COLUMNS[-1])
         print(h); print("-" * len(h))
         for a in scored:
-            nm = (a["name"][:24] + "..") if len(a["name"]) > 26 else a["name"]
-            pool = (f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-").rjust(6)
-            # The table is sorted by %dry, so a source with one non-dry report sorts
-            # to the TOP -- the least-evidenced read presented as the most reliable.
-            # `N` alone does not say that the read is structurally constant; the star
-            # does, and it is the one place the sort can be second-guessed at a glance.
-            star = " *" if a["pred_is_constant"] else ""
-            print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}"
-                  f"{a['best_ctrl_r']:>+7.2f}{pool}   {running_phrase(a['pred'])}{star}")
+            cells = summary_cells(a)
+            nm = (cells[0][:24] + "..") if len(cells[0]) > 26 else cells[0]
+            print(nm.ljust(_TEXT_WIDTHS[0])
+                  + "".join(c.rjust(w) for c, w in zip(cells[1:], _TEXT_WIDTHS[1:]))
+                  + "   " + cells[-1])
     if rain_only:
-        wname = f"{WINDOWS[1]}d"
-        print(f"\nNO VERDICT -- no usable reports. Rain context only (in full above):")
+        print("\nNO VERDICT -- no usable reports. Rain context only (in full above):")
         for a in rain_only:
-            v = a["rain_pct"][wname]
-            pct = "n/a" if v["pct"] is None else f"{_ordinal(round(v['pct']))} pct"
-            print(f"  {a['name'][:38]:<40}{wname} rain {v['inches']:>5.2f}\" = "
-                  f"{pct} for this date")
+            name, wname, inches, pct = rain_only_cells(a)
+            print(f"  {name[:38]:<40}" + rain_only_read(wname, inches.rjust(5), pct))
     if scored:
-        print("\nr* = season-controlled Spearman (day-of-year removed), POOLED toward nearby")
-        print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
-        print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
-        print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
-        if any(a["pred_is_constant"] for a in scored):
-            print(f"* = read off every report the source has (n <= {ANALOG_K}), so it is the same")
-            print("on every date and rain cannot move it -- the record, not a forecast.")
-    # The standing monsoon caveat is about ERA5 specifically, so it stops being
-    # true the moment --precip picks something else -- say which product answered
-    # instead, and let the [caveat] note above carry that product's own limits.
-    # It applies to the rain percentiles as much as to the verdicts, so it is
-    # printed even when every source here is rain-only.
-    if precip == DEFAULT_PRECIP:
-        # ...and once the radar check has actually run, telling the reader to go
-        # and check radar by hand is telling them to redo what just happened. That
-        # instruction becoming obsolete is the entire point of #18.
-        if any(a["radar"] for a in rows):
-            print("ERA5 misses monsoon cells -- the RADAR CHECK under each source above is")
-            print("that cross-check. Where it disagrees, read the verdict as a floor.")
-        else:
-            print("Reminder: ERA5 misses monsoon cells -- for a summer go/no-go, cross-check radar (MRMS/AHPS).")
-    else:
-        print(f"Precip: {precip}, NOT the default ERA5 -- see the [caveat] above, and")
-        print("don't compare these numbers against a run made with another product.")
+        print()
+        for line in summary_legend(scored):
+            print(line)
+    for line in summary_caveats(rows, precip):
+        print(line)
+
+# --------------------------------------------------------------------------- #
+# Markdown output: the same summary, pasteable (#20)
+# --------------------------------------------------------------------------- #
+def _md(s):
+    """Make a string safe in a Markdown table cell or a blockquote.
+
+    A pipe would end the cell early, and the emphasis characters would silently
+    swallow a span: "r*" appears twice in the legend, which is exactly enough for
+    a renderer to italicize everything between them and drop both asterisks --
+    turning the definition of the column into a typographic accident."""
+    for ch in ("\\", "|", "*", "_", "`", "[", "]", "<"):
+        s = s.replace(ch, "\\" + ch)
+    return s
+
+def _asof_label(rows):
+    """The date(s) these rows were actually read at. Usually one; it is a range
+    only when the precip series ran out at different dates for different sources,
+    which is worth showing rather than quietly picking a winner."""
+    seen = sorted({a["asof"] for a in rows})
+    return str(seen[0]) if len(seen) == 1 else f"{seen[0]} to {seen[-1]}"
+
+def print_markdown_table(rows, precip=DEFAULT_PRECIP):
+    """The summary as Markdown, for pasting into trip notes.
+
+    Two deliberate differences from the text emitter. It prints for a single
+    source as well, because here the table IS the output and suppressing it would
+    make the command print nothing. And it opens with a provenance line the
+    terminal never needs -- as-of date, precip product, engine version -- because
+    the whole premise of this format is that it will be read somewhere the run's
+    parameters are long gone, by someone deciding how much water to carry."""
+    if not rows:
+        print("## Water summary\n")
+        print("_No sources could be read -- see the diagnostics on stderr._")
+        return
+    scored, rain_only = summary_sections(rows)
+    print("## Water summary\n")
+    print(f"_As of {_asof_label(rows)} · precip: {_md(precip)} · "
+          f"backcountry-water-oracle {__version__}_\n")
+    if scored:
+        print("Most reliable first.\n")
+        print("| " + " | ".join(_md(c) for c in SUMMARY_COLUMNS) + " |")
+        # Numbers right, prose left -- the alignment the fixed-width table has.
+        print("| " + " | ".join(["---"] + ["---:"] * 5 + ["---"]) + " |")
+        for a in scored:
+            print("| " + " | ".join(_md(c) for c in summary_cells(a)) + " |")
+        print()
+    if rain_only:
+        print("**No verdict -- no usable reports. Rain context only:**\n")
+        for a in rain_only:
+            name, wname, inches, pct = rain_only_cells(a)
+            print(f"- **{_md(name)}** -- " + rain_only_read(wname, inches, pct))
+        print()
+    # Blockquoted, and last, so the caveats travel with the table on every paste
+    # instead of being the part that gets trimmed to fit.
+    if scored:
+        print("> " + _md(" ".join(summary_legend(scored))) + "\n")
+    print("> " + _md(" ".join(summary_caveats(rows, precip, standalone=True))))
 
 # --------------------------------------------------------------------------- #
 # JSON output: the same numbers the text report shows, for a consumer instead of
@@ -1462,6 +1618,17 @@ def _radar_arg(s):
     resolve_radar(s)
     return s
 
+# What --format will accept. "text" is the report a person reads; "markdown" is
+# the summary table alone, pasteable (#20); "json" is the whole payload for a
+# consumer. Ordered as they are here because that is the order they get offered
+# in an error message, and it runs human -> portable -> machine.
+FORMATS = ("text", "markdown", "json")
+
+def _format_arg(s):
+    if s not in FORMATS:
+        raise ValueError(s)
+    return s
+
 # Flags that take a value, as {flag: (option key, parser, what it wants)}. The
 # parser is what turns the string into the option, and its name is what the user
 # is told when it rejects one.
@@ -1474,14 +1641,23 @@ _VALUE_FLAGS = {
     "--radar":       ("radar",     _radar_arg,
                       "a radar product, or none: "
                       + ", ".join(sorted(PRECIP_PROVIDERS) + ["none"])),
+    "--format":      ("fmt",       _format_arg, "one of: " + ", ".join(FORMATS)),
 }
 # Flags that are just on/off, as {flag: (option key, value when present)}.
 _BOOL_FLAGS = {
     "--no-cache": ("use_cache", False),
     "--no-pool":  ("do_pool",   False),
-    "--json":     ("as_json",   True),
     "--version":  ("version",   True),
 }
+# Flags that USED to work, and what to type instead. Answering a retired flag
+# with the generic "unknown flag" error sends someone hunting for a typo in a
+# flag they spelled correctly for two releases -- and --json in particular was
+# the documented way to drive this engine from a script, so every pipeline that
+# exists is holding it.
+# The version here is the release that SHIPS the removal, not the one in
+# __version__ while it sits unreleased -- it is what the user is told to look up
+# in the changelog, so cutting that release must confirm the number matches.
+_RETIRED_FLAGS = {"--json": ("--format json", "0.3.0")}
 
 def parse_args(argv):
     """argv -> (files, options), in ONE pass that consumes each flag's value as it
@@ -1492,7 +1668,7 @@ def parse_args(argv):
     for a missing value, an unparseable one, or an unknown flag."""
     files = []
     opts = {"asof": date.today(), "use_cache": True, "do_pool": True,
-            "as_json": False, "version": False, "n_harm": 1,
+            "fmt": "text", "version": False, "n_harm": 1,
             "radius_km": POOL_RADIUS_KM, "precip": None, "radar": None}
     i = 0
     while i < len(argv):
@@ -1512,6 +1688,9 @@ def parse_args(argv):
                     opts[key] = parse(raw)
                 except ValueError:
                     raise ValueError(f"{name}: expected {want}, got {raw!r}")
+            elif name in _RETIRED_FLAGS:
+                use, gone_in = _RETIRED_FLAGS[name]
+                raise ValueError(f"{name} was removed in {gone_in} -- use {use} instead")
             elif name in _BOOL_FLAGS:
                 if eq:
                     raise ValueError(f"{name} takes no value (got {inline!r})")
@@ -1579,7 +1758,7 @@ def _analyse(sources, asof, use_cache, n_harm, pool, radius_km, note, provider=N
 
 def run(sources, asof=None, *, harmonics=1, pool=True, pool_radius_km=POOL_RADIUS_KM,
         use_cache=True, precip=None, radar=None, notes=None, on_note=None):
-    """Run the engine over loaded sources and return the same dict --json prints.
+    """Run the engine over loaded sources and return the same dict --format json prints.
 
     This is what main() does minus argument parsing and output, so an embedding
     host gets the engine's real behaviour -- including every future change to how
@@ -1622,7 +1801,7 @@ def main(argv):
         print(f"backcountry-water-oracle {__version__}")
         return 0
     asof, use_cache, do_pool = opts["asof"], opts["use_cache"], opts["do_pool"]
-    as_json, n_harm, radius_km = opts["as_json"], opts["n_harm"], opts["radius_km"]
+    fmt, n_harm, radius_km = opts["fmt"], opts["n_harm"], opts["radius_km"]
     # No --precip means "whatever PRECIP_PROVIDER is" rather than "open-meteo", so
     # that a host importing this module and assigning its own provider still gets
     # it when it shells out to the CLI. parse_args already rejected an unknown
@@ -1638,18 +1817,22 @@ def main(argv):
         files = ["-"]
     if not files:
         print(__doc__); return 1
-    # In --json mode stdout is reserved for the JSON object, so diagnostics go to
-    # stderr -- and into "notes", so a consumer reading only stdout still sees them.
+    # Outside --format text, stdout is reserved for the artifact -- a JSON object a
+    # consumer parses, or Markdown someone pastes -- so diagnostics go to stderr.
+    # They also go into "notes", so a JSON consumer reading only stdout still sees
+    # them. Markdown has no such channel: a [skip] line interleaved with the table
+    # would travel into the trip notes as though it were part of the reading.
+    quiet = fmt != "text"
     notes = []
     def note(kind, msg, name=None):
         notes.append({"kind": kind, "source": name, "message": msg})
         line = f"[{kind}] " + (f"{name}: " if name else "") + msg
-        print(line, file=sys.stderr if as_json else sys.stdout)
+        print(line, file=sys.stderr if quiet else sys.stdout)
     try:
         sources = load_sources(files)
     except Exception as e:
         note("error", str(e))
-        if as_json:
+        if fmt == "json":
             json.dump(run_json([], notes, asof, do_pool, radius_km, n_harm, use_cache,
                                precip_name(provider), _radar_param(radar)),
                       sys.stdout, indent=2)
@@ -1659,11 +1842,14 @@ def main(argv):
     # embedding host cannot answer differently for the same input.
     rows = _analyse(sources, asof, use_cache, n_harm, do_pool, radius_km, note, provider,
                     radar)
-    if as_json:
+    if fmt == "json":
         json.dump(run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache,
                            precip_name(provider), _radar_param(radar)),
                   sys.stdout, indent=2)
         print()
+        return 0
+    if fmt == "markdown":
+        print_markdown_table(rows, precip_name(provider))
         return 0
     for a in rows:
         print_source(a)
