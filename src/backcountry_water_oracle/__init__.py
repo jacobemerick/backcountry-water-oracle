@@ -33,7 +33,7 @@ Usage:
     python3 forecast.py area.csv --format json          # machine-readable output
 
 EMBEDDING IT (hosts):
-    pip install backcountry-water-oracle     # or: pip install git+<repo>@v0.1.0
+    pip install backcountry-water-oracle     # or: pip install git+<repo>@v0.3.0
 
     import backcountry_water_oracle as bwo
     bwo.PRECIP_PROVIDER = my_provider        # (lat, lon, end_date, use_cache)
@@ -99,13 +99,13 @@ from datetime import date, timedelta
 # 0.x while the API is still moving. What a bump means:
 #   MAJOR/MINOR -- the Python API, the JSON schema, or the CLI's flags changed
 #                  (see README, "What's public"). While at 0.x, that is the minor
-#                  field. Flags joined that list when --json was removed.
+#                  field. Flags joined that list in 0.3.0, which removed --json.
 #   PATCH       -- a fix that leaves all three alone.
 # A change to the METHOD -- pooling, season control, the analog read -- can move
 # verdicts without touching either surface, so those go in the changelog and are
 # stamped into every payload as params.engine_version. The golden test in
 # tests/ fails whenever that happens, which is the signal to write it down.
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1654,9 +1654,10 @@ _BOOL_FLAGS = {
 # flag they spelled correctly for two releases -- and --json in particular was
 # the documented way to drive this engine from a script, so every pipeline that
 # exists is holding it.
-# The version here is the release that SHIPS the removal, not the one in
-# __version__ while it sits unreleased -- it is what the user is told to look up
-# in the changelog, so cutting that release must confirm the number matches.
+# The version here is the release that SHIPPED the removal. It is frozen at that
+# number and does NOT track __version__ -- someone hitting this error on 0.9 still
+# needs to be sent to the 0.3.0 changelog entry, not to the release they happen to
+# be running.
 _RETIRED_FLAGS = {"--json": ("--format json", "0.3.0")}
 
 def parse_args(argv):
