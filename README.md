@@ -245,7 +245,7 @@ bump and an entry in [CHANGELOG.md](CHANGELOG.md):
 
 **Everything else is internal** — anything underscore-prefixed, plus
 `analyze_base()`, `finalize()`, `finalize_rain_only()`, `pool_controlled()`,
-`run_json()`, `parse_args()`, and the layout of the text report. They're importable, because
+`run_json()`, `parse_args()`, `ANALOG_K`, and the layout of the text report. They're importable, because
 Python, but they move without notice. If you need one of them, that's worth an
 issue: it usually means a supported seam is missing, which is exactly how
 `load_sources_from()` and `run()` came to exist.
@@ -346,6 +346,10 @@ my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
               "signal_check": "partly seasonal, real signal remains" },
     "asof": "2026-07-13", "precip_in": 0.863,
     "predicted_flow": 0.12, "verdict": "Marginal - pools/dripping at best",
+    // how many past reports the read averaged, and whether that was ALL of them.
+    // true (always at n <= 5) means the same number comes back on every date —
+    // the record, not a forecast. See "When the read can't move" below.
+    "analog_n": 5, "pred_is_constant": false,
     "harmonics": 1,
     // antecedent rain ranked against this coordinate's OWN record for this
     // day-of-year. Present for every source; the only analysis when n == 0.
@@ -386,13 +390,59 @@ second-guess the headline without re-running the engine.
 - **rain-window correlation** — Spearman r between flow and antecedent rain over
   30/60/90/180/270/365 days. Highest |r| = the source's effective "memory."
 - **AS-OF READ** — nearest-analog estimate: current value of the best window vs.
-  the 5 historical reports with the most similar antecedent rain.
+  the `ANALOG_K` (5) historical reports with the most similar antecedent rain.
+  A `*` beside it, and a `NOTE` under the source, means the source has 5 reports
+  or fewer — see below.
 - **r\*** (summary table) — the season-controlled correlation, *pooled* toward
   nearby sources where they agree; this is the number the verdict keys off.
 - **POOL** (summary table) — what fraction of `r*` was borrowed from neighbors
   (`-` = no neighbors in range, or `--no-pool`). Each source's per-window table
   still shows its **own** raw and season-controlled r for full transparency.
 - **ANTECEDENT RAIN** — see below; rain context, never a verdict.
+
+## When the read can't move (`pred_is_constant`)
+
+The as-of read averages the `ANALOG_K` past reports whose antecedent rain best
+matched today's. There are only so many to choose from: **at `n <= 5` the nearest
+analogs are every report the source has.** The sort selects nothing, the current
+rain is computed and then discarded, and the source returns the same number on
+every date — its mean flow, wearing a verdict's clothes.
+
+That is not a bug and not a bad estimate; it is the only honest thing to say from
+one observation. It is also not a forecast, and until now nothing in the output
+distinguished the two. Two keys do:
+
+| key | meaning |
+|---|---|
+| `analog_n` | how many past reports `predicted_flow` actually averaged (≤ 5) |
+| `pred_is_constant` | `true` when that was the source's entire history |
+
+`ANALOG_K` itself is **internal** — it is named rather than a bare `5` so the
+boundary is visible in one place, not so it can be turned. `analog_n` in the
+payload is the supported way to see what the read drew on.
+
+`small_n` does *not* already cover this. It is `n < 25` and means the read is
+coarse; `pred_is_constant` means it is **structurally unable to respond to rain**.
+A source can be `small_n` and still react. Both are `null` when `n == 0`, like
+every other verdict-derived key.
+
+The text report says it twice: a `NOTE` under the verdict, and a `*` on the
+summary row. The star matters most — the table sorts by `%DRY`, so a source with
+a single non-dry report sorts to the **top**, the least-evidenced read presented
+as the most reliable.
+
+Read `type` with the same suspicion there. `Reliable (groundwater-buffered)` is
+`pct_dry <= 10`, computed on the same handful of reports, so one non-dry
+observation earns it. The engine still reports it — suppressing it would move a
+value rather than add a fact — but a consumer should caveat it alongside the
+verdict.
+
+**This is most sources.** In the Mazatzal corpus, 72 of 76 sit at `n <= 5`; 51
+have exactly one report. Deciding what to *do* about that — whether such a source
+should emit a verdict at all — is
+[#39](https://github.com/jacobemerick/backcountry-water-oracle/issues/39)'s
+option A, which moves numbers and is held for its own release. This release only
+makes the situation visible.
 
 ## The radar cross-check (`--radar`)
 
