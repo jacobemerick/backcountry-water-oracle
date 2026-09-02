@@ -29,7 +29,7 @@ covers "does this still run as a script at all".
   contiguous, so re-deriving them costs nothing and saves ~2/3 of the size).
   They run to `2026-07-30`, past the as-of the tests use, so the engine's trim
   path is always in play.
-- `fixtures/golden-mazatzal.json` — the full `--json` payload for the worked
+- `fixtures/golden-mazatzal.json` — the full `--format json` payload for the worked
   example.
 
 ## The golden test

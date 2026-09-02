@@ -412,7 +412,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(files, ["a.csv"])
         self.assertTrue(opts["use_cache"])
         self.assertTrue(opts["do_pool"])
-        self.assertFalse(opts["as_json"])
+        self.assertEqual(opts["fmt"], "text")
         self.assertEqual(opts["n_harm"], 1)
         self.assertEqual(opts["radius_km"], forecast.POOL_RADIUS_KM)
 
@@ -423,10 +423,42 @@ class TestParseArgs(unittest.TestCase):
             self.assertEqual(opts["asof"], date(2026, 7, 13))
 
     def test_bool_flags(self):
-        _, opts = forecast.parse_args(["a.csv", "--no-cache", "--no-pool", "--json"])
+        _, opts = forecast.parse_args(["a.csv", "--no-cache", "--no-pool"])
         self.assertFalse(opts["use_cache"])
         self.assertFalse(opts["do_pool"])
-        self.assertTrue(opts["as_json"])
+
+    def test_format_defaults_to_text(self):
+        _, opts = forecast.parse_args(["a.csv"])
+        self.assertEqual(opts["fmt"], "text")
+
+    def test_format_accepts_every_documented_name(self):
+        """Both spellings, because --format=json and --format json are both in the
+        README and a value flag that only works one way is a bug people hit once."""
+        for name in forecast.FORMATS:
+            for argv in (["a.csv", "--format", name], ["a.csv", f"--format={name}"]):
+                _, opts = forecast.parse_args(argv)
+                self.assertEqual(opts["fmt"], name, argv)
+
+    def test_unknown_format_is_rejected_with_the_valid_set(self):
+        with self.assertRaises(ValueError) as cm:
+            forecast.parse_args(["a.csv", "--format", "html"])
+        msg = str(cm.exception)
+        self.assertIn("html", msg)
+        for name in forecast.FORMATS:
+            self.assertIn(name, msg)
+
+    def test_retired_json_flag_says_what_to_type_instead(self):
+        """#20 replaced --json with --format json. A retired flag falling through
+        to "unknown flag" sends someone hunting for a typo in a flag they spelled
+        correctly for two releases -- and --json was the documented way to script
+        this engine, so every pipeline that exists is holding it."""
+        for argv in (["a.csv", "--json"], ["a.csv", "--json=yes"]):
+            with self.assertRaises(ValueError) as cm:
+                forecast.parse_args(argv)
+            msg = str(cm.exception)
+            self.assertIn("--json", msg)
+            self.assertIn("--format json", msg)
+            self.assertNotIn("unknown flag", msg)
 
     def test_value_flag_in_final_position_errors(self):
         """The #11 crash: this used to raise IndexError and dump a traceback."""
@@ -450,7 +482,7 @@ class TestParseArgs(unittest.TestCase):
 
     def test_bool_flag_given_a_value_is_rejected(self):
         with self.assertRaises(ValueError) as cm:
-            forecast.parse_args(["a.csv", "--json=yes"])
+            forecast.parse_args(["a.csv", "--no-pool=yes"])
         self.assertIn("takes no value", str(cm.exception))
 
     def test_a_file_may_be_named_like_a_flag_value(self):
@@ -460,11 +492,11 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(opts["asof"], date(2026, 7, 13))
 
     def test_dash_is_a_file_not_a_flag(self):
-        files, _ = forecast.parse_args(["-", "--json"])
+        files, _ = forecast.parse_args(["-", "--format", "json"])
         self.assertEqual(files, ["-"])
 
     def test_several_files(self):
-        files, _ = forecast.parse_args(["a.csv", "--json", "b.csv"])
+        files, _ = forecast.parse_args(["a.csv", "--format", "json", "b.csv"])
         self.assertEqual(files, ["a.csv", "b.csv"])
 
 
@@ -581,7 +613,7 @@ class TestPrecipSelection(OfflineTestCase):
         """A host that assigned PRECIP_PROVIDER keeps it, through run() and the CLI."""
         payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
         self.assertEqual(len(payload["sources"]), 3)          # the fixture answered
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(len(json.loads(out)["sources"]), 3)
 
     def test_an_unknown_product_is_rejected_before_anything_is_fetched(self):
@@ -613,7 +645,7 @@ class TestPrecipSelection(OfflineTestCase):
         self.assertEqual(forecast.precip_name(from_postgres), "open-meteo")
 
     def test_the_payload_is_stamped_with_what_answered(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["precip"], "open-meteo")
 
     # -- the caveat that rides along with a product -------------------------- #
@@ -912,7 +944,7 @@ class TestRadarCheck(OfflineTestCase):
 
     def test_the_cli_flag_selects_and_disables(self):
         forecast.RADAR_PROVIDER = self.WET
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json",
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json",
                              "--radar", "none"])
         payload = json.loads(out)
         self.assertEqual(payload["params"]["radar"], "none")
@@ -920,7 +952,7 @@ class TestRadarCheck(OfflineTestCase):
 
     def test_no_flag_means_whatever_the_host_configured(self):
         forecast.RADAR_PROVIDER = self.WET
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["radar"], "test:radar")
 
 
@@ -1444,7 +1476,7 @@ class TestNearestAnalog(OfflineTestCase):
         self.assertEqual(a["n"], 30)
 
     def test_the_read_uses_the_best_window(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         for s in json.loads(out)["sources"]:
             self.assertEqual(s["best"]["days"], int(s["best"]["window"][:-1]))
             self.assertGreaterEqual(s["precip_in"], 0.0)
@@ -1933,7 +1965,7 @@ class TestCLI(OfflineTestCase):
         self.assertEqual(out, "")
 
     def test_json_stdout_is_pure_json(self):
-        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(code, 0)
         payload = json.loads(out)                        # raises if anything leaked
         self.assertEqual(len(payload["sources"]), 3)
@@ -1945,7 +1977,7 @@ class TestCLI(OfflineTestCase):
             "Good,34.09,-111.45,2024-01-01,1.0",
             "Good,34.09,-111.45,2024-06-01,0.0",
         ])
-        code, out, err = run_cli([p, "--asof", "2026-07-13", "--json"])
+        code, out, err = run_cli([p, "--asof", "2026-07-13", "--format", "json"])
         payload = json.loads(out)
         # Since #8 the unusable source stays in the payload (with rain context and a
         # null verdict) rather than vanishing -- but it is still noted, and the note
@@ -1960,21 +1992,21 @@ class TestCLI(OfflineTestCase):
 
     def test_json_stays_valid_when_the_csv_is_rejected(self):
         p = write_csv(self.tmp, "bad2.csv", ["1,2"], header="a,b")
-        code, out, err = run_cli([p, "--json"])
+        code, out, err = run_cli([p, "--format", "json"])
         self.assertEqual(code, 2)
         payload = json.loads(out)
         self.assertEqual(payload["sources"], [])
         self.assertEqual(payload["notes"][0]["kind"], "error")
 
     def test_text_mode_diagnostics_go_to_stdout(self):
-        """Deliberate asymmetry: only --json reserves stdout."""
+        """Deliberate asymmetry: only --format text writes diagnostics to stdout."""
         p = write_csv(self.tmp, "bad3.csv", ["1,2"], header="a,b")
         code, out, err = run_cli([p])
         self.assertIn("[error]", out)
         self.assertEqual(err, "")
 
     def test_no_pool_reports_no_borrowing(self):
-        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json", "--no-pool"])
+        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json", "--no-pool"])
         payload = json.loads(out)
         self.assertFalse(payload["params"]["pool"])
         for s in payload["sources"]:
@@ -1982,7 +2014,7 @@ class TestCLI(OfflineTestCase):
             self.assertEqual(s["best"]["group_n"], 1)
 
     def test_params_echo_the_run(self):
-        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json",
+        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json",
                                 "--pool-radius", "15", "--harmonics", "2"])
         params = json.loads(out)["params"]
         self.assertEqual(params["pool_radius_km"], 15.0)
@@ -2007,7 +2039,7 @@ class TestRun(OfflineTestCase):
     def test_matches_the_cli_json_exactly(self):
         """The parity check: same input, same answer, whichever entry point."""
         payload = forecast.run(self.sources(), ASOF)
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(payload, json.loads(out))
 
     def test_a_source_with_nothing_usable_gets_no_verdict_not_a_crash(self):
@@ -2037,7 +2069,7 @@ class TestRun(OfflineTestCase):
     def test_skip_wording_matches_the_cli(self):
         p = write_csv(self.tmp, "old2.csv", ["A,34.09,-111.47,1999-01-01,0.5"])
         payload = forecast.run(self.sources(p), ASOF)
-        _, _, err = run_cli([p, "--asof", "2026-07-13", "--json"])
+        _, _, err = run_cli([p, "--asof", "2026-07-13", "--format", "json"])
         self.assertIn(payload["notes"][0]["message"], err)
 
     def test_options_are_honoured(self):
@@ -2090,15 +2122,228 @@ class TestRun(OfflineTestCase):
             body = f.read()
         payload = forecast.run(
             forecast.load_sources_from([io.StringIO(body)], labels=["<request>"]), ASOF)
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(payload, json.loads(out))
 
 
-class TestJsonSchema(OfflineTestCase):
-    """The --json payload is an API the site reads; renaming a field breaks it."""
+
+# =========================================================================== #
+# Markdown export -- issue #20
+# =========================================================================== #
+class TestMarkdownExport(OfflineTestCase):
+    """The summary table, pasteable.
+
+    What these guard is not the pipes and dashes -- it is that the table stays
+    readable AWAY from the run that produced it. Everything below is a way the
+    export could silently become a table of numbers with no provenance and no
+    caveat, which is the one shape #20 said it must never take."""
+    ASOF = "2026-07-13"
+
     def setUp(self):
         super().setUp()
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def md(self, args=()):
+        code, out, err = run_cli([EXAMPLE_CSV, "--asof", self.ASOF,
+                                  "--format", "markdown"] + list(args))
+        self.assertEqual(code, 0, err)
+        return out
+
+    def test_it_is_a_markdown_table_with_a_row_per_scored_source(self):
+        out = self.md()
+        rows = [l for l in out.splitlines() if l.startswith("| ")]
+        self.assertEqual(len(rows), 5)                 # header + separator + 3 sources
+        self.assertTrue(rows[1].startswith("| --- |"))
+        for name in ("Chilson Spring", "Castersen Seep"):
+            self.assertTrue(any(name in r for r in rows[2:]), name)
+
+    def test_the_columns_are_the_same_ones_the_text_table_has(self):
+        """One column list, two emitters. A column added to the terminal report and
+        not to the export is the drift this shares SUMMARY_COLUMNS to prevent."""
+        header = next(l for l in self.md().splitlines() if l.startswith("| "))
+        for col in forecast.SUMMARY_COLUMNS:
+            self.assertIn(col.replace("*", "\\*"), header, col)
+
+    def test_rows_are_ordered_most_reliable_first(self):
+        rows = [l for l in self.md().splitlines() if l.startswith("| ")][2:]
+        pct = [int(r.split("|")[3].strip().rstrip("%")) for r in rows]
+        self.assertEqual(pct, sorted(pct))
+
+    def test_names_are_not_truncated(self):
+        """The text table clips to 26 columns because a terminal has 80. Trip notes
+        do not, and "Big Kahuna Falls - Mazatza.." is a name you would have to come
+        back to the tool to resolve."""
+        out = self.md()
+        self.assertIn("Big Kahuna Falls - Mazatzal Wilderness", out)
+        self.assertNotIn("..", out.split("SOURCE")[1].split(">")[0])
+
+    def test_it_carries_the_legend_and_the_caveat(self):
+        """#20's closing note: a table pasted into notes with no ERA5/monsoon
+        warning is the one most likely to be read months later, out of context."""
+        out = self.md()
+        self.assertIn("season-controlled Spearman", out)
+        self.assertIn("ERA5 misses monsoon cells", out)
+
+    def test_the_caveats_do_not_point_at_a_report_that_is_not_there(self):
+        """Standalone output cannot say "above" -- there is nothing above it."""
+        tail = self.md().split("SOURCE")[-1]
+        for pointer in (" above", "in full above"):
+            self.assertNotIn(pointer, tail)
+
+    def test_the_asterisk_in_r_star_is_escaped(self):
+        """r* appears twice in the legend, which is exactly enough for a renderer to
+        italicize everything between them and eat both asterisks -- turning the
+        definition of a column into a typographic accident."""
+        legend = next(l for l in self.md().splitlines() if "Spearman" in l)
+        self.assertIn("r\\*", legend)
+        self.assertNotIn("r* ", legend)
+
+    def test_a_pipe_in_a_source_name_cannot_break_the_table(self):
+        p = write_csv(self.tmp, "pipe.csv",
+                      ["A|B Spring,34.09,-111.47,2024-03-01,0.5",
+                       "A|B Spring,34.09,-111.47,2024-06-01,0.2"])
+        code, out, _ = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertEqual(code, 0)
+        row = next(l for l in out.splitlines() if "Spring" in l and l.startswith("| "))
+        self.assertIn("A\\|B Spring", row)
+        self.assertEqual(row.count(" | "), len(forecast.SUMMARY_COLUMNS) - 1)
+
+    def test_it_states_the_run_it_came_from(self):
+        """As-of date, precip product and engine version, because the premise of this
+        format is that it is read where the run's parameters are long gone."""
+        line = next(l for l in self.md().splitlines() if l.startswith("_As of"))
+        self.assertIn(self.ASOF, line)
+        self.assertIn("open-meteo", line)
+        self.assertIn(forecast.__version__, line)
+
+    def test_a_non_default_precip_product_is_named_in_the_caveat(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            forecast.print_markdown_table(self._rows(), "iem:mrms")
+        self.assertIn("iem:mrms", out.getvalue())
+        self.assertIn("NOT the default ERA5", out.getvalue())
+
+    def test_one_source_still_gets_a_table(self):
+        """The text report suppresses the summary for a single source -- there is a
+        full block right above it. In Markdown the table IS the output, so
+        suppressing it would make the command print nothing at all."""
+        p = write_csv(self.tmp, "one.csv",
+                      ["Solo,34.09,-111.47,2024-03-01,0.5",
+                       "Solo,34.09,-111.47,2024-06-01,0.2"])
+        code, out, _ = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertEqual(code, 0)
+        self.assertIn("| Solo |", out)
+
+    def test_a_rain_only_source_is_listed_but_given_no_verdict(self):
+        p = write_csv(self.tmp, "rainonly.csv", ["Nowhere,34.09,-111.47,,"])
+        code, out, err = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("No verdict", out)
+        self.assertIn("Nowhere", out)
+        self.assertIn("for this date", out)
+        self.assertNotIn("| Nowhere |", out)      # never a row in the scored table
+
+    def test_a_constant_read_keeps_its_star_and_its_legend_line(self):
+        """#39's `*` reaches the export because it rides in summary_cells(), not in
+        either emitter. This is the case the shared-content split exists for: the
+        table sorts by %DRY, so a source with one non-dry report sorts to the TOP,
+        and the pasted copy is the one read furthest from the evidence."""
+        p = write_csv(self.tmp, "star.csv",
+                      ["Solo Tank,34.09,-111.47,2024-03-01,0.8",
+                       "Steady Creek,34.09,-111.45,2024-01-15,0.6",
+                       "Steady Creek,34.09,-111.45,2024-03-20,0.4",
+                       "Steady Creek,34.09,-111.45,2024-06-10,0.2",
+                       "Steady Creek,34.09,-111.45,2024-09-05,0.5",
+                       "Steady Creek,34.09,-111.45,2025-02-11,0.7",
+                       "Steady Creek,34.09,-111.45,2025-05-19,0.3",
+                       "Steady Creek,34.09,-111.45,2025-08-22,0.1"])
+        code, out, err = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertEqual(code, 0, err)
+        solo = next(l for l in out.splitlines() if l.startswith("| Solo Tank |"))
+        steady = next(l for l in out.splitlines() if l.startswith("| Steady Creek |"))
+        self.assertTrue(solo.rstrip().endswith("\\* |"), solo)   # escaped, so it renders
+        self.assertFalse(steady.rstrip().endswith("\\* |"), steady)
+        self.assertIn("read off every report the source has", out)
+        # n=1 with one non-dry report sorts ABOVE the source with seven of them.
+        self.assertLess(out.index(solo), out.index(steady))
+
+    def test_no_star_means_no_star_legend(self):
+        """A legend entry for a mark nobody can see is noise; an unexplained mark is
+        worse. The worked example has no source at n <= ANALOG_K."""
+        out = self.md()
+        self.assertNotIn("read off every report the source has", out)
+        rows = [l for l in out.splitlines() if l.startswith("| ")][2:]
+        self.assertTrue(rows)
+        for r in rows:
+            self.assertFalse(r.rstrip().endswith("\\* |"), r)
+
+    def test_diagnostics_go_to_stderr_so_the_paste_is_clean(self):
+        """A [skip] line interleaved with the table would travel into the trip notes
+        looking like part of the reading."""
+        p = write_csv(self.tmp, "old.csv", ["Ancient,34.09,-111.47,1999-01-01,0.5"])
+        code, out, err = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertEqual(code, 0)
+        self.assertIn("[skip]", err)
+        self.assertNotIn("[skip]", out)
+
+    def test_a_source_whose_reports_all_predate_the_record_keeps_its_rain(self):
+        """It is not dropped: with no usable reports it still gets the rain context
+        #8 gives a bare coordinate, which is the whole reason it has no table row."""
+        p = write_csv(self.tmp, "old.csv", ["Gone,34.09,-111.47,1999-01-01,0.5"])
+        _, out, _ = run_cli([p, "--asof", self.ASOF, "--format", "markdown"])
+        self.assertIn("No verdict", out)
+        self.assertIn("- **Gone**", out)
+        self.assertNotIn("| Gone |", out)
+
+    def test_nothing_analysable_says_so_instead_of_printing_an_empty_table(self):
+        """A bare header, a separator and no rows reads as "everything is fine and
+        there is no water", which is the opposite of what happened."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            forecast.print_markdown_table([])
+        self.assertNotIn("| ---", out.getvalue())
+        self.assertIn("No sources could be read", out.getvalue())
+
+    def _rows(self):
+        """The analysed rows the CLI would render, without the CLI."""
+        return forecast._analyse(forecast.load_sources([EXAMPLE_CSV]),
+                                date.fromisoformat(self.ASOF), True, 1, True,
+                                forecast.POOL_RADIUS_KM, lambda *a, **k: None)
+
+
+
+class TestSummaryContentIsSharedByBothEmitters(OfflineTestCase):
+    """The refactor #20 required: cells and prose built once, rendered twice."""
+    def test_both_emitters_read_the_same_cells(self):
+        rows = forecast._analyse(forecast.load_sources([EXAMPLE_CSV]),
+                                 date(2026, 7, 13), True, 1, True,
+                                 forecast.POOL_RADIUS_KM, lambda *a, **k: None)
+        scored, _ = forecast.summary_sections(rows)
+        text, md = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(text):
+            forecast.print_table(rows)
+        with contextlib.redirect_stdout(md):
+            forecast.print_markdown_table(rows)
+        for a in scored:
+            # Every cell but the name, which the text emitter is allowed to clip.
+            for cell in forecast.summary_cells(a)[1:]:
+                self.assertIn(cell, text.getvalue(), cell)
+                self.assertIn(cell.replace("*", "\\*"), md.getvalue(), cell)
+
+    def test_the_caveat_switches_on_the_precip_product_in_both(self):
+        self.assertIn("NOT the default ERA5",
+                      " ".join(forecast.summary_caveats([], "iem:mrms")))
+        self.assertIn("NOT the default ERA5",
+                      " ".join(forecast.summary_caveats([], "iem:mrms", standalone=True)))
+        self.assertIn("ERA5 misses monsoon cells",
+                      " ".join(forecast.summary_caveats([], forecast.DEFAULT_PRECIP)))
+
+class TestJsonSchema(OfflineTestCase):
+    """The --format json payload is an API the site reads; renaming a field breaks it."""
+    def setUp(self):
+        super().setUp()
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.payload = json.loads(out)
         self.src = self.payload["sources"][0]
 
@@ -2160,7 +2405,7 @@ class TestJsonSchema(OfflineTestCase):
 # Golden regression: the whole payload, on the worked example
 # =========================================================================== #
 class TestGolden(OfflineTestCase):
-    """Real ERA5 fixture in, full --json payload out, compared field by field.
+    """Real ERA5 fixture in, full --format json payload out, compared field by field.
 
     This is the test that catches silent numeric drift from a refactor -- the
     failure mode nobody can eyeball, in a tool whose wrong answers look just as
@@ -2169,7 +2414,7 @@ class TestGolden(OfflineTestCase):
     GOLDEN = os.path.join(FIXTURES, "golden-mazatzal.json")
 
     def test_matches_the_recorded_payload(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         got = json.loads(out)
         with open(self.GOLDEN) as f:
             want = json.load(f)
@@ -2183,7 +2428,7 @@ class TestGolden(OfflineTestCase):
     def test_the_documented_headline_numbers(self):
         """Spelled out separately from the golden blob: these exact numbers appear
         in the README and in the PR history, so a change here is a docs change."""
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         by_name = {s["name"]: s for s in json.loads(out)["sources"]}
         kahuna = by_name["Big Kahuna Falls - Mazatzal Wilderness"]
         castersen = by_name["Castersen Seep"]
@@ -2249,7 +2494,7 @@ class TestVersioning(OfflineTestCase):
         self.assertEqual(payload["params"]["engine_version"], forecast.__version__)
 
     def test_the_cli_payload_is_stamped_too(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--json"])
+        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["engine_version"], forecast.__version__)
 
     def test_pyproject_reads_the_version_from_the_module(self):

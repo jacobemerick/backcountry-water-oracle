@@ -57,15 +57,15 @@ a new input format — adapt the input to the schema instead.
    source,lat,lon,date,score,status
    ```
 
-5. **Run the engine for the numbers — always with `--json`:**
+5. **Run the engine for the numbers — always with `--format json`:**
    ```bash
-   python3 forecast.py /tmp/water-forecast.csv --json
+   python3 forecast.py /tmp/water-forecast.csv --format json
    ```
    Add `--asof YYYY-MM-DD` if the user named a future trip date. The precip cache
    follows the engine rather than the working directory, so it doesn't matter
    where you run it from. **Read the JSON — never parse the text report**; the
    JSON carries the same numbers in labeled fields, so you can't misread a column. (You can also pipe the CSV straight in with `-` instead of a
-   temp file — `... | python3 forecast.py - --json` — but a temp file is worth
+   temp file — `... | python3 forecast.py - --format json` — but a temp file is worth
    keeping: the user can rerun and tweak it.)
 
    If the engine writes anything to **stderr**, or `notes` is non-empty, say so —
@@ -78,8 +78,15 @@ a new input format — adapt the input to the schema instead.
      trust the answer less, and the user can't see it unless you say it.
 
 6. **Show the user the engine's own report too**, when they'd want the table:
-   rerun the same command without `--json` and show that output verbatim. Precip
-   is cached from the first run, so this is instant and costs nothing.
+   rerun the same command with `--format text` and show that output verbatim.
+   Precip is cached from the first run, so this is instant and costs nothing.
+
+   If the user wants the table to **keep** — pasted into trip notes, a planning
+   doc, a message — rerun with `--format markdown` instead and hand them that
+   verbatim. It is the summary table alone, and it carries its own as-of date,
+   precip product, and the ERA5/monsoon caveat, so it stays readable months later
+   away from this conversation. Don't retype the table into Markdown yourself:
+   the engine's version can't lose the caveat, and yours can.
 
 7. **Present the result.** Lead with the verdict per source, then what drives it.
    Map the JSON fields you're speaking from:
@@ -279,6 +286,8 @@ with **both** `date` and `score` blank is a coordinate-only source (a pin); one
 of the two blank is rejected as a typo. This is the only thing the engine
 understands; everything above is about producing it.
 
-The engine takes this CSV as file path(s) or on stdin (`-`), and answers as the
-text report or as `--json`. It never learns an input format — if a new site's
+The engine takes this CSV as file path(s) or on stdin (`-`), and answers in
+whichever `--format` you ask for: `text`, `markdown`, or `json`. (Through 0.2.0
+the last was spelled `--json`; 0.3.0 removed that flag.) It never learns an input
+format — if a new site's
 reports don't fit, that's a parsing job for you, not an engine change.

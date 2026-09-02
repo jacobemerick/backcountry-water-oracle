@@ -81,7 +81,7 @@ jobs:
         run: |
           /tmp/venv/bin/water-forecast \
             "$GITHUB_WORKSPACE/examples/mazatzal-wilderness.csv" \
-            --asof 2026-07-13 --json > /tmp/out.json
+            --asof 2026-07-13 --format json > /tmp/out.json
           python3 -c "
           import json
           d = json.load(open('/tmp/out.json'))

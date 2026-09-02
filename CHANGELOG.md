@@ -2,8 +2,8 @@
 
 What changed, and — separately — **whether the numbers moved**.
 
-The version covers the Python API and the `--json` payload (README, ["What's
-public"](README.md#whats-public)). It does *not* cover the answers: a change to
+The version covers the Python API, the JSON payload, and the CLI's flags (README,
+["What's public"](README.md#whats-public)). It does *not* cover the answers: a change to
 the method can leave every signature and every key identical and still turn
 *Marginal* into *Likely DRY* for the same CSV on the same date. That has happened
 twice. So every release below says explicitly whether verdicts moved, and every
@@ -14,7 +14,9 @@ code that produced it.
 
 **No verdict changed.** The golden payload gained two keys and nothing else — no
 number in it moved, including the version string. What changed is what the output
-*admits*.
+*admits*, and where it can be read.
+
+**This release is breaking**: `--json` is removed in favour of `--format json`.
 
 ### Added
 
@@ -34,6 +36,29 @@ number in it moved, including the version string. What changed is what the outpu
   latter. This is not an edge case — 72 of the 76 sources in the Mazatzal corpus
   sit at `n <= 5`, 51 of them at exactly one report.
   ([#39](https://github.com/jacobemerick/backcountry-water-oracle/issues/39))
+- **`--format {text,markdown,json}`.** `markdown` prints the summary table alone,
+  as Markdown, for pasting into trip notes. It carries its own provenance line
+  (as-of date, precip product, engine version), and the legend and monsoon caveat
+  at the bottom where they travel with every copy-paste — a table read months
+  later, away from the run that made it, is the one that most needs them. Source
+  names are not truncated, it prints for a single source too (where the text
+  report suppresses the summary), and diagnostics move to stderr so the paste is
+  clean. Markdown-hostile characters are escaped, including the `r*` that appears
+  twice in the legend.
+  ([#20](https://github.com/jacobemerick/backcountry-water-oracle/issues/20))
+
+### Removed
+
+- **`--json` is gone. Use `--format json`.** Same payload, same schema, new
+  spelling; nothing about the JSON itself changed. `--json` now exits `2` with
+  `--json was removed in 0.3.0 -- use --format json instead` rather than falling
+  through to the generic unknown-flag error.
+
+  **This breaks any script or host that shells out with `--json`** — including the
+  site, and anything pinning `@v0.2.0` that upgrades. Pin `v0.2.0`, or change the
+  flag. The Python API (`run()`, `load_sources*()`) is untouched: an embedder that
+  imports the module rather than shelling out needs no change.
+  ([#20](https://github.com/jacobemerick/backcountry-water-oracle/issues/20))
 
 ### Changed
 
@@ -53,6 +78,16 @@ number in it moved, including the version string. What changed is what the outpu
   would move verdicts for the large majority of real sources, which by this
   repo's own standard is a method change deserving its own release and its own
   before/after measurement.
+- **HTML export**, asked for alongside the Markdown table in #20. A styled table is
+  real presentation code — escaping, layout, a stylesheet — in an engine that has
+  stayed stdlib-only and sterile, and anything that wants HTML can render it from
+  `--format json`, which is what the site already does.
+
+  Internally the summary's cells and prose are now built once and rendered twice
+  (`SUMMARY_COLUMNS`, `summary_sections()`, `summary_cells()`, `summary_legend()`,
+  `summary_caveats()`), so a column or a caveat cannot land in one emitter and not
+  the other — #39's `*` marker went in through `summary_cells()` and reached both.
+  Like the text report's layout, these stay **internal**.
 
 ## 0.2.0 — 2026-08-11
 

@@ -39,13 +39,14 @@ python3 forecast.py area.csv --no-pool                        # analyze each sou
 python3 forecast.py az.csv --precip iem:mrms                  # a different precip product
 python3 forecast.py area.csv --radar none                     # skip the radar cross-check
 cat area.csv | python3 forecast.py -                          # read the CSV from stdin
-python3 forecast.py area.csv --json                           # machine-readable output
+python3 forecast.py area.csv --format markdown                # summary table for trip notes
+python3 forecast.py area.csv --format json                    # machine-readable output
 ```
 Or install it and get a `water-forecast` command anywhere:
 
 ```bash
 pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.2.0
-water-forecast area.csv --json
+water-forecast area.csv --format json
 water-forecast --version
 ```
 
@@ -71,7 +72,7 @@ from datetime import date
 
 bwo.PRECIP_PROVIDER = my_provider                        # optional, see below
 sources = bwo.load_sources_from([io.StringIO(request_body)])
-payload = bwo.run(sources, date(2026, 8, 15))            # what --json prints
+payload = bwo.run(sources, date(2026, 8, 15))            # what --format json prints
 ```
 
 Pin it. `pip install git+https://github.com/…@v0.2.0` — an exact pin makes every
@@ -81,7 +82,7 @@ drifted twice.
 ### Running the engine
 
 `run()` is `main()` minus argument parsing and output: the same three passes, the
-same skip and error handling, returning the same dict `--json` prints. Use it
+same skip and error handling, returning the same dict `--format json` prints. Use it
 rather than calling `analyze_base()` / `pool_controlled()` / `finalize()` yourself
 — a copy of those passes silently drifts from the engine as it changes, and a
 service that did exactly that started returning 500s the first time the engine
@@ -214,7 +215,7 @@ python3 tests/test_forecast.py
 231 tests. No dependencies, no config, **no network**, ~1 second. Precipitation
 comes from a committed fixture through `PRECIP_PROVIDER`, and every test that
 reads an as-of date passes one explicitly, so nothing depends on today's date or
-on ERA5 not being revised. A golden test compares the entire `--json` payload for
+on ERA5 not being revised. A golden test compares the entire `--format json` payload for
 the worked example, which is what catches silent numeric drift — the failure mode
 you can't eyeball in a tool whose wrong answers look as plausible as its right
 ones. See [`tests/README.md`](tests/README.md), especially before regenerating
@@ -233,19 +234,21 @@ bump and an entry in [CHANGELOG.md](CHANGELOG.md):
 
 | | |
 |---|---|
-| `run(sources, asof, …)` | the three passes; returns the `--json` payload |
+| `run(sources, asof, …)` | the three passes; returns the `--format json` payload |
 | `load_sources(paths)` / `load_sources_from(streams, labels)` | the two loaders |
 | `analyze(src, asof, …)` | single source, no pooling |
 | `PRECIP_PROVIDER`, `open_meteo_provider(…)`, `CACHE_DIR` | the precip seam |
 | `PRECIP_PROVIDERS`, `resolve_precip(name)`, `precip_name(provider)` | the named built-ins, and what a payload calls them |
 | `RADAR_PROVIDER`, `resolve_radar(name)` | the radar cross-check seam; `None` turns it off |
-| the **`--json` payload** | every key and its meaning |
+| the **`--format json` payload** | every key and its meaning |
 | the **CLI** | flags, `-`/stdin, exit codes (`0` ok, `1` no input, `2` bad input) |
 | `__version__` | also `--version`, also `params.engine_version` in the payload |
 
 **Everything else is internal** — anything underscore-prefixed, plus
 `analyze_base()`, `finalize()`, `finalize_rain_only()`, `pool_controlled()`,
-`run_json()`, `parse_args()`, `ANALOG_K`, and the layout of the text report. They're importable, because
+`run_json()`, `parse_args()`, `ANALOG_K`, and the layout of the text and Markdown
+reports — including `print_table()`, `print_markdown_table()` and the `summary_*`
+helpers they share. They're importable, because
 Python, but they move without notice. If you need one of them, that's worth an
 issue: it usually means a supported seam is missing, which is exactly how
 `load_sources_from()` and `run()` came to exist.
@@ -302,23 +305,30 @@ Anything that can emit this CSV can drive the engine. The mapping from real-worl
 report language to a `score` lives in the **skill's rubric** (see
 `.claude/skills/water-forecast/SKILL.md`), not in the engine.
 
-## Piping it around (`-` and `--json`)
+## Piping it around (`-` and `--format`)
 
 The engine reads stdin and writes JSON, so it drops into a pipeline between your
 own normalizer and your own consumer:
 
 ```bash
-my-scraper | python3 forecast.py - --json | jq '.sources[] | {name, verdict}'
+my-scraper | python3 forecast.py - --format json | jq '.sources[] | {name, verdict}'
 ```
 
 - **`-` as a filename reads the CSV from stdin.** It mixes freely with real
-  paths (`forecast.py known.csv - --json`), and stdin is used automatically when
-  no files are given and stdin isn't a terminal — so a bare `... | forecast.py`
+  paths (`forecast.py known.csv - --format json`), and stdin is used automatically
+  when no files are given and stdin isn't a terminal — so a bare `... | forecast.py`
   works too. (stdin is consumed once; a repeated `-` is ignored.)
-- **`--json` prints one JSON object on stdout** instead of the text report, with
-  every number the text report shows. Diagnostics (`[skip]`/`[error]`) move to
-  **stderr** and are also collected under `notes`, so stdout stays valid JSON
-  even when a source fails. Exit code is unchanged (`2` on a bad CSV).
+- **`--format json` prints one JSON object on stdout** instead of the text report,
+  with every number the text report shows. It is also collected under `notes`, so
+  stdout stays valid JSON even when a source fails. Exit code is unchanged (`2` on
+  a bad CSV).
+- **`--format markdown` prints the summary table alone**, pasteable — see
+  [below](#the-table-you-paste-into-trip-notes---format-markdown).
+- Outside `--format text`, stdout carries only that output: diagnostics
+  (`[skip]`/`[error]`) move to **stderr**.
+
+> **Renamed in 0.3.0.** This used to be the `--json` flag. It is gone, not
+> deprecated: `--json` now exits `2` and tells you to type `--format json`.
 
 ```jsonc
 {
@@ -443,6 +453,59 @@ should emit a verdict at all — is
 [#39](https://github.com/jacobemerick/backcountry-water-oracle/issues/39)'s
 option A, which moves numbers and is held for its own release. This release only
 makes the situation visible.
+## The table you paste into trip notes (`--format markdown`)
+
+The summary table is the part that leaves the terminal. `--format markdown` prints
+it — and only it — as Markdown:
+
+```bash
+python3 forecast.py examples/mazatzal-wilderness.csv --asof 2026-07-13 --format markdown
+```
+
+```markdown
+## Water summary
+
+_As of 2026-07-13 · precip: open-meteo · backcountry-water-oracle 0.2.0_
+
+Most reliable first.
+
+| SOURCE | N | %DRY | BEST | r\* | POOL | AS-OF READ |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Chilson Spring | 58 | 3% | 90d | +0.45 | 24% | Marginal - pools/dripping at best |
+| Big Kahuna Falls - Mazatzal Wilderness | 160 | 14% | 30d | +0.55 | 9% | Probably has water (light flow / pools) |
+| Castersen Seep | 15 | 33% | 60d | +0.45 | 65% | Marginal - pools/dripping at best |
+
+> r\* = season-controlled Spearman … Type key: \<=10% dry = buffered/reliable; …
+
+> Reminder: ERA5 misses monsoon cells — for a summer go/no-go, cross-check radar (MRMS/AHPS).
+```
+
+Four things differ from the terminal table, all for the same reason — this output
+gets read somewhere the run that produced it is no longer on screen:
+
+- **It states its provenance**: as-of date, precip product, engine version. A table
+  of verdicts with no date on it is worse than no table.
+- **It carries the legend and the caveat**, always, at the bottom where they travel
+  with every copy-paste. A pasted table with no ERA5/monsoon warning is precisely
+  the one most likely to be read months later, out of context, by someone deciding
+  how much water to carry. The `*` from
+  [`pred_is_constant`](#when-the-read-cant-move-pred_is_constant) travels too, with
+  its legend line — a source at `n <= 5` sorts to the *top* of this table, so the
+  export is the last place that mark should go missing.
+- **Names aren't truncated.** The terminal clips to 26 columns because a terminal is
+  80 wide; `Big Kahuna Falls - Mazatza..` in your notes is a name you'd have to come
+  back to the tool to resolve.
+- **It prints for a single source too**, where the text report suppresses the summary
+  (there's a full block right above it). Here the table *is* the output.
+
+Diagnostics go to **stderr**, so the paste is clean. The per-source detail — monthly
+means, the correlation table, the rain block, the radar check — isn't rendered; that
+is what `--format text` is for.
+
+**HTML is deliberately not built.** A styled table is real presentation code —
+escaping, layout, a stylesheet — in an engine that has stayed stdlib-only and
+sterile. Anything that wants HTML can render it from `--format json`, which is what
+the site does.
 
 ## The radar cross-check (`--radar`)
 
@@ -553,7 +616,7 @@ Unnamed seep   (34.09000, -111.47000)
 The same applies to a source whose every report falls outside the precip record —
 it used to disappear into `notes`, and now stays in the payload with rain context.
 
-**In `--json`, such a source keeps every key**, with the verdict-derived ones
+**In `--format json`, such a source keeps every key**, with the verdict-derived ones
 `null` (`pct_dry`, `mean_flow`, `type`, `best`, `precip_in`, `predicted_flow`,
 `verdict`) and the two containers empty (`correlations`, `mean_flow_by_month`).
 Nothing is *missing*, so a consumer branches on **`n == 0`** (equivalently
@@ -656,7 +719,7 @@ Shipped:
       (`--pool-radius`), data-driven empirical-Bayes shrinkage. `--no-pool` to disable.
 - [x] **Season control** (day-of-year, annual harmonics) — reports a
       season-controlled r beside raw; classification keys off it. `--harmonics=N`.
-- [x] **JSON output & stdin** (`--json`, `-`) so the engine composes in a pipeline.
+- [x] **JSON output & stdin** (`--format json`, `-`) so the engine composes in a pipeline.
 - [x] **Injectable precip provider** so an embedding host can supply its own backend
       or shared cache — see [Embedding the engine](#embedding-the-engine-hosts).
 - [x] **Test suite + CI** ([#15]) — stdlib, offline, deterministic; run on every
@@ -679,11 +742,15 @@ Shipped:
       beside the ERA5 fit instead of refitting the model on it, which retires the
       "go check radar yourself" caveat every forecast used to end with.
       See [above](#the-radar-cross-check---radar).
+- [x] **Table export** ([#20]) — `--format {text,markdown,json}`, replacing `--json`.
+      Markdown only: HTML was asked for in the same issue and declined, because a
+      styled table is presentation code in an engine that has stayed sterile, and
+      the site already renders its own from the JSON.
+      See [above](#the-table-you-paste-into-trip-notes---format-markdown).
 
 Planned — the issue is where the detail and the open questions live:
 
 - [ ] **Log-your-own-visits** so each source sharpens over time ([#19]).
-- [ ] **Table export** (Markdown/HTML) for trip notes ([#20]).
 - [ ] **Earlier precip history** — whether `PRECIP_START` can move back from 2007,
       given ERA5 reaches 1940 ([#21]).
 
