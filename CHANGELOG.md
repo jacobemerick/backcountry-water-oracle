@@ -10,11 +10,12 @@ twice. So every release below says explicitly whether verdicts moved, and every
 payload carries `params.engine_version` so a stored forecast can be traced to the
 code that produced it.
 
-## Unreleased
+## 0.3.0 — 2026-09-02
 
 **No verdict changed *for the same input*.** The golden payload gained two keys
-and nothing else — no number in it moved, including the version string. What
-changed is what the output *admits*, and where it can be read.
+and nothing else; regenerating it for this release changed exactly one line,
+`engine_version`, and left every source byte-identical. What changed is what the
+output *admits*, and where it can be read.
 
 **But the shipped example is a different input now.** `examples/` grew from three
 sources to 76, and under pooling that moves its verdicts — see the entry below.
@@ -94,6 +95,24 @@ engine answers the same, it is being asked something bigger.
   `golden-mazatzal.json` and the precip fixtures are untouched. `examples/` is now
   free to grow without dragging the golden payload along with it — and the
   `build + install` CI smoke test follows it there, for the same reason.
+
+### Compatibility
+
+`--json` is the only removal, and it is a CLI spelling, not a schema change: a
+payload produced by 0.3.0 is readable by anything that read 0.2.0's, and
+`params.engine_version` distinguishes them. What breaks is the *invocation*.
+
+- **Shelling out?** `--json` → `--format json`. Nothing else moves.
+- **Importing?** Nothing to do. `run()`, `analyze()` and both loaders are
+  unchanged, and no payload key was renamed or removed.
+- **Pinned to `@v0.2.0`?** You are unaffected until you upgrade. When you do, that
+  is the one line to change.
+
+A payload stored by 0.1.0 has no `params.precip` and no `params.radar`; one stored
+by 0.2.0 has no `analog_n` and no `pred_is_constant`. Read an absent `precip` as
+`"open-meteo"`, an absent `radar` as `"none"`, and an absent `pred_is_constant` as
+*unknown* rather than `false` — at `n <= 5` it would have been `true`, and that is
+most sources.
 
 ### Not changed, on purpose
 

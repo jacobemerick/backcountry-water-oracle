@@ -45,7 +45,7 @@ python3 forecast.py area.csv --format json                    # machine-readable
 Or install it and get a `water-forecast` command anywhere:
 
 ```bash
-pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.2.0
+pip install git+https://github.com/jacobemerick/backcountry-water-oracle@v0.3.0
 water-forecast area.csv --format json
 water-forecast --version
 ```
@@ -75,7 +75,7 @@ sources = bwo.load_sources_from([io.StringIO(request_body)])
 payload = bwo.run(sources, date(2026, 8, 15))            # what --format json prints
 ```
 
-Pin it. `pip install git+https://github.com/…@v0.2.0` — an exact pin makes every
+Pin it. `pip install git+https://github.com/…@v0.3.0` — an exact pin makes every
 upgrade deliberate, which is the point after the alternative (a vendored copy)
 drifted twice.
 
@@ -333,7 +333,7 @@ my-scraper | python3 forecast.py - --format json | jq '.sources[] | {name, verdi
 ```jsonc
 {
   "asof": "2026-07-13",
-  "params": { "engine_version": "0.2.0", "precip": "open-meteo", "radar": "iem:mrms",
+  "params": { "engine_version": "0.3.0", "precip": "open-meteo", "radar": "iem:mrms",
               "pool": true, "pool_radius_km": 25.0, "harmonics": 1,
               "cache": true, "windows": [30, 60, 90, 180, 270, 365] },
   "sources": [{
@@ -470,7 +470,7 @@ other than a terminal.
 ```markdown
 ## Water summary
 
-_As of 2026-07-13 · precip: open-meteo · backcountry-water-oracle 0.2.0_
+_As of 2026-07-13 · precip: open-meteo · backcountry-water-oracle 0.3.0_
 
 Most reliable first.
 
