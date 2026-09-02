@@ -76,11 +76,19 @@ jobs:
       - name: The console script exists and reports its version
         run: /tmp/venv/bin/water-forecast --version
 
+      # Runs against the PINNED three-source fixture, not examples/. This step makes
+      # real network calls -- it is the one place the installed wheel is exercised
+      # end to end, cache and all -- so its input has to be something whose size is
+      # a decision rather than a side effect. examples/ is explicitly free to grow
+      # (it went 3 -> 76 sources), and pointing a live-fetch smoke test at it costs
+      # one Open-Meteo round trip per source: that took 21 minutes and then failed
+      # on a hardcoded count. The fixture is byte-identical to the old examples/
+      # file, so this still asserts exactly what it used to.
       - name: It runs from outside the checkout, on its own cache
         working-directory: /tmp
         run: |
           /tmp/venv/bin/water-forecast \
-            "$GITHUB_WORKSPACE/examples/mazatzal-wilderness.csv" \
+            "$GITHUB_WORKSPACE/tests/fixtures/mazatzal-golden.csv" \
             --asof 2026-07-13 --format json > /tmp/out.json
           python3 -c "
           import json
@@ -88,6 +96,21 @@ jobs:
           assert len(d['sources']) == 3, d
           assert d['params']['engine_version'], d['params']
           print('ok:', d['params']['engine_version'], [s['name'][:20] for s in d['sources']])
+          "
+
+      # ...and examples/ is still checked, just not over the network: it is the file
+      # the README tells people to run first, so "it parses and every row is well
+      # formed" is worth a second, while "76 live precip fetches agree with a number
+      # written down last release" is not.
+      - name: The shipped example still loads
+        run: |
+          /tmp/venv/bin/python -c "
+          import backcountry_water_oracle as bwo
+          srcs = bwo.load_sources(['examples/mazatzal-wilderness.csv'])
+          assert len(srcs) > 3, len(srcs)
+          assert all(s['name'] and s['reports'] is not None for s in srcs)
+          print('ok:', len(srcs), 'sources,',
+                sum(len(s['reports']) for s in srcs), 'reports')
           "
 
       - name: The wheel carries the engine and nothing else

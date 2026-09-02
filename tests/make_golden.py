@@ -16,7 +16,7 @@ import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
-from test_forecast import ASOF, EXAMPLE_CSV, FIXTURES, fixture_provider, run_cli  # noqa: E402
+from test_forecast import ASOF, GOLDEN_CSV, FIXTURES, fixture_provider, run_cli  # noqa: E402
 import backcountry_water_oracle as forecast                                       # noqa: E402
 
 forecast.PRECIP_PROVIDER = fixture_provider
@@ -24,7 +24,7 @@ forecast.PRECIP_PROVIDER = fixture_provider
 # network call, which would make this fixture both slow and non-deterministic.
 # Radar output is pinned by its own tests, against a stub.
 forecast.RADAR_PROVIDER = None
-code, out, err = run_cli([EXAMPLE_CSV, "--asof", ASOF.isoformat(), "--format", "json"])
+code, out, err = run_cli([GOLDEN_CSV, "--asof", ASOF.isoformat(), "--format", "json"])
 if code != 0:
     sys.exit(f"engine exited {code}: {err}")
 

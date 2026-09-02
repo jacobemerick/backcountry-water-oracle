@@ -32,7 +32,10 @@ import backcountry_water_oracle as forecast                       # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
 PRECIP_DIR = os.path.join(FIXTURES, "precip")
-EXAMPLE_CSV = os.path.join(ROOT, "examples", "mazatzal-wilderness.csv")
+# The golden input is pinned here, not in examples/: examples/ carries the full
+# Mazatzal corpus, which grows. The precip fixtures and golden-mazatzal.json are
+# keyed to exactly these three coordinates.
+GOLDEN_CSV = os.path.join(FIXTURES, "mazatzal-golden.csv")
 ASOF = date(2026, 7, 13)          # the worked example's as-of, used throughout
 
 # --------------------------------------------------------------------------- #
@@ -362,8 +365,8 @@ class TestLoadSourcesFrom(unittest.TestCase):
 
     def test_matches_load_sources_exactly(self):
         """One code path, so the two entry points cannot drift apart."""
-        from_file = forecast.load_sources([EXAMPLE_CSV])
-        with open(EXAMPLE_CSV) as f:
+        from_file = forecast.load_sources([GOLDEN_CSV])
+        with open(GOLDEN_CSV) as f:
             from_stream = forecast.load_sources_from([f])
         self.assertEqual(from_stream, from_file)
 
@@ -510,7 +513,7 @@ class TestPrecipProvider(OfflineTestCase):
             calls.append((round(lat, 2), round(lon, 2), end_date, use_cache))
             return load_fixture_series(lat, lon)
         forecast.PRECIP_PROVIDER = provider
-        srcs = forecast.load_sources([EXAMPLE_CSV])
+        srcs = forecast.load_sources([GOLDEN_CSV])
         rows = [forecast.analyze(s, ASOF) for s in srcs]
         self.assertEqual(len(calls), 3)
         self.assertTrue(all(r is not None for r in rows))
@@ -522,7 +525,7 @@ class TestPrecipProvider(OfflineTestCase):
         def exact(lat, lon, end_date, use_cache=True):
             full = load_fixture_series(lat, lon)
             return forecast._trim_daily(full, end_date)
-        srcs = forecast.load_sources([EXAMPLE_CSV])
+        srcs = forecast.load_sources([GOLDEN_CSV])
         long_rows = [forecast.analyze(s, ASOF) for s in srcs]      # fixture: full series
         forecast.PRECIP_PROVIDER = exact
         exact_rows = [forecast.analyze(s, ASOF) for s in srcs]
@@ -592,7 +595,7 @@ class TestPrecipSelection(OfflineTestCase):
             return load_fixture_series(lat, lon)
         forecast.PRECIP_PROVIDERS["test:fake"] = fake
         try:
-            payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF,
+            payload = forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF,
                                    precip="test:fake")
         finally:
             del forecast.PRECIP_PROVIDERS["test:fake"]
@@ -604,22 +607,22 @@ class TestPrecipSelection(OfflineTestCase):
         the length of the run -- two concurrent requests must not cross rain."""
         forecast.PRECIP_PROVIDERS["test:fake"] = fixture_provider
         try:
-            forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF, precip="test:fake")
+            forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF, precip="test:fake")
         finally:
             del forecast.PRECIP_PROVIDERS["test:fake"]
         self.assertIs(forecast.PRECIP_PROVIDER, fixture_provider)
 
     def test_no_selection_leaves_an_injected_provider_alone(self):
         """A host that assigned PRECIP_PROVIDER keeps it, through run() and the CLI."""
-        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        payload = forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF)
         self.assertEqual(len(payload["sources"]), 3)          # the fixture answered
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(len(json.loads(out)["sources"]), 3)
 
     def test_an_unknown_product_is_rejected_before_anything_is_fetched(self):
         calls = []
         forecast.PRECIP_PROVIDER = lambda *a, **k: calls.append(1)
-        code, out, err = run_cli([EXAMPLE_CSV, "--precip", "iem:prims"])
+        code, out, err = run_cli([GOLDEN_CSV, "--precip", "iem:prims"])
         self.assertEqual(code, 2)
         self.assertIn("[error]", err)
         self.assertIn("iem:mrms", err)                        # tells you the real names
@@ -627,7 +630,7 @@ class TestPrecipSelection(OfflineTestCase):
 
     def test_run_rejects_an_unknown_product(self):
         with self.assertRaises(ValueError):
-            forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF, precip="nope")
+            forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF, precip="nope")
 
     # -- what the payload says answered ------------------------------------- #
     def test_a_built_in_is_named_by_its_registry_key(self):
@@ -645,7 +648,7 @@ class TestPrecipSelection(OfflineTestCase):
         self.assertEqual(forecast.precip_name(from_postgres), "open-meteo")
 
     def test_the_payload_is_stamped_with_what_answered(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["precip"], "open-meteo")
 
     # -- the caveat that rides along with a product -------------------------- #
@@ -672,7 +675,7 @@ class TestPrecipSelection(OfflineTestCase):
 
     def test_the_summary_footer_stops_claiming_era5(self):
         """The standing 'ERA5 misses monsoon cells' line is false under --precip."""
-        rows = forecast._analyse(forecast.load_sources([EXAMPLE_CSV]), ASOF, True, 1,
+        rows = forecast._analyse(forecast.load_sources([GOLDEN_CSV]), ASOF, True, 1,
                                  True, 25.0, lambda *a: None)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -823,7 +826,7 @@ class TestRadarCheck(OfflineTestCase):
 
     def payload(self, radar=None, csv=None, **kw):
         forecast.RADAR_PROVIDER = radar
-        body = csv if csv is not None else open(EXAMPLE_CSV).read()
+        body = csv if csv is not None else open(GOLDEN_CSV).read()
         return forecast.run(forecast.load_sources_from([io.StringIO(body)]), ASOF, **kw)
 
     def test_it_reports_both_short_windows_and_only_those(self):
@@ -907,7 +910,7 @@ class TestRadarCheck(OfflineTestCase):
 
     def test_the_text_report_frames_it_as_a_floor_not_a_correction(self):
         forecast.RADAR_PROVIDER = self.WET
-        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        code, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13"])
         self.assertIn("RADAR CHECK", out)
         self.assertIn("NOT in anything above", out)
         self.assertIn("floor", out)
@@ -916,9 +919,9 @@ class TestRadarCheck(OfflineTestCase):
     def test_the_footer_stops_sending_the_reader_to_do_it_by_hand(self):
         """Retiring that instruction is the point of #18 -- it was an admission."""
         forecast.RADAR_PROVIDER = self.WET
-        _, on, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        _, on, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13"])
         forecast.RADAR_PROVIDER = None
-        _, off, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        _, off, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13"])
         self.assertIn("cross-check radar (MRMS/AHPS)", off)
         self.assertNotIn("cross-check radar (MRMS/AHPS)", on)
         self.assertIn("that cross-check", on)
@@ -938,13 +941,13 @@ class TestRadarCheck(OfflineTestCase):
     def test_an_unknown_radar_product_is_rejected(self):
         with self.assertRaises(ValueError):
             forecast.resolve_radar("iem:mrmz")
-        code, out, err = run_cli([EXAMPLE_CSV, "--radar", "iem:mrmz"])
+        code, out, err = run_cli([GOLDEN_CSV, "--radar", "iem:mrmz"])
         self.assertEqual(code, 2)
         self.assertIn("[error]", err)
 
     def test_the_cli_flag_selects_and_disables(self):
         forecast.RADAR_PROVIDER = self.WET
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json",
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json",
                              "--radar", "none"])
         payload = json.loads(out)
         self.assertEqual(payload["params"]["radar"], "none")
@@ -952,7 +955,7 @@ class TestRadarCheck(OfflineTestCase):
 
     def test_no_flag_means_whatever_the_host_configured(self):
         forecast.RADAR_PROVIDER = self.WET
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["radar"], "test:radar")
 
 
@@ -1476,7 +1479,7 @@ class TestNearestAnalog(OfflineTestCase):
         self.assertEqual(a["n"], 30)
 
     def test_the_read_uses_the_best_window(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         for s in json.loads(out)["sources"]:
             self.assertEqual(s["best"]["days"], int(s["best"]["window"][:-1]))
             self.assertGreaterEqual(s["precip_in"], 0.0)
@@ -1709,7 +1712,7 @@ class TestZeroReportMode(OfflineTestCase):
 
     def test_reported_sources_get_the_rain_context_too(self):
         """#8 explicitly: useful everywhere, not only where reports are missing."""
-        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        payload = forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF)
         for s in payload["sources"]:
             self.assertGreater(s["n"], 0)
             self.assertTrue(s["rain_percentiles"])
@@ -1739,8 +1742,8 @@ class TestZeroReportMode(OfflineTestCase):
 
     def test_a_pin_does_not_disturb_its_neighbours_pooling(self):
         """It contributes no correlation, so it must not join a neighbourhood."""
-        alone = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
-        with open(EXAMPLE_CSV) as f:
+        alone = forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF)
+        with open(GOLDEN_CSV) as f:
             with_pin = forecast.run(forecast.load_sources_from(
                 [io.StringIO(f.read() + "Pin,34.09,-111.47,,\n")]), ASOF)
         by_name = {s["name"]: s for s in with_pin["sources"]}
@@ -1935,7 +1938,7 @@ class TestCLI(OfflineTestCase):
         self.tmp = tempfile.mkdtemp()
 
     def test_success_exit_code_and_summary(self):
-        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13"])
+        code, out, err = run_cli([GOLDEN_CSV, "--asof", "2026-07-13"])
         self.assertEqual(code, 0)
         self.assertIn("SUMMARY", out)
         self.assertIn("Chilson Spring", out)
@@ -1959,13 +1962,13 @@ class TestCLI(OfflineTestCase):
         self.assertEqual(code, 2)
 
     def test_bad_flag_exits_2_and_writes_to_stderr(self):
-        code, out, err = run_cli([EXAMPLE_CSV, "--asof"])
+        code, out, err = run_cli([GOLDEN_CSV, "--asof"])
         self.assertEqual(code, 2)
         self.assertIn("[error]", err)
         self.assertEqual(out, "")
 
     def test_json_stdout_is_pure_json(self):
-        code, out, err = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        code, out, err = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(code, 0)
         payload = json.loads(out)                        # raises if anything leaked
         self.assertEqual(len(payload["sources"]), 3)
@@ -2006,7 +2009,7 @@ class TestCLI(OfflineTestCase):
         self.assertEqual(err, "")
 
     def test_no_pool_reports_no_borrowing(self):
-        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json", "--no-pool"])
+        code, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json", "--no-pool"])
         payload = json.loads(out)
         self.assertFalse(payload["params"]["pool"])
         for s in payload["sources"]:
@@ -2014,7 +2017,7 @@ class TestCLI(OfflineTestCase):
             self.assertEqual(s["best"]["group_n"], 1)
 
     def test_params_echo_the_run(self):
-        code, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json",
+        code, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json",
                                 "--pool-radius", "15", "--harmonics", "2"])
         params = json.loads(out)["params"]
         self.assertEqual(params["pool_radius_km"], 15.0)
@@ -2033,13 +2036,13 @@ class TestRun(OfflineTestCase):
         import tempfile
         self.tmp = tempfile.mkdtemp()
 
-    def sources(self, path=EXAMPLE_CSV):
+    def sources(self, path=GOLDEN_CSV):
         return forecast.load_sources([path])
 
     def test_matches_the_cli_json_exactly(self):
         """The parity check: same input, same answer, whichever entry point."""
         payload = forecast.run(self.sources(), ASOF)
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(payload, json.loads(out))
 
     def test_a_source_with_nothing_usable_gets_no_verdict_not_a_crash(self):
@@ -2118,11 +2121,11 @@ class TestRun(OfflineTestCase):
 
     def test_the_whole_embedding_path_needs_no_private_api(self):
         """load_sources_from -> run, exactly as the README tells a host to do it."""
-        with open(EXAMPLE_CSV) as f:
+        with open(GOLDEN_CSV) as f:
             body = f.read()
         payload = forecast.run(
             forecast.load_sources_from([io.StringIO(body)], labels=["<request>"]), ASOF)
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(payload, json.loads(out))
 
 
@@ -2145,7 +2148,7 @@ class TestMarkdownExport(OfflineTestCase):
         self.tmp = tempfile.mkdtemp()
 
     def md(self, args=()):
-        code, out, err = run_cli([EXAMPLE_CSV, "--asof", self.ASOF,
+        code, out, err = run_cli([GOLDEN_CSV, "--asof", self.ASOF,
                                   "--format", "markdown"] + list(args))
         self.assertEqual(code, 0, err)
         return out
@@ -2307,7 +2310,7 @@ class TestMarkdownExport(OfflineTestCase):
 
     def _rows(self):
         """The analysed rows the CLI would render, without the CLI."""
-        return forecast._analyse(forecast.load_sources([EXAMPLE_CSV]),
+        return forecast._analyse(forecast.load_sources([GOLDEN_CSV]),
                                 date.fromisoformat(self.ASOF), True, 1, True,
                                 forecast.POOL_RADIUS_KM, lambda *a, **k: None)
 
@@ -2316,7 +2319,7 @@ class TestMarkdownExport(OfflineTestCase):
 class TestSummaryContentIsSharedByBothEmitters(OfflineTestCase):
     """The refactor #20 required: cells and prose built once, rendered twice."""
     def test_both_emitters_read_the_same_cells(self):
-        rows = forecast._analyse(forecast.load_sources([EXAMPLE_CSV]),
+        rows = forecast._analyse(forecast.load_sources([GOLDEN_CSV]),
                                  date(2026, 7, 13), True, 1, True,
                                  forecast.POOL_RADIUS_KM, lambda *a, **k: None)
         scored, _ = forecast.summary_sections(rows)
@@ -2343,7 +2346,7 @@ class TestJsonSchema(OfflineTestCase):
     """The --format json payload is an API the site reads; renaming a field breaks it."""
     def setUp(self):
         super().setUp()
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.payload = json.loads(out)
         self.src = self.payload["sources"][0]
 
@@ -2386,7 +2389,7 @@ class TestJsonSchema(OfflineTestCase):
 
     def test_sources_are_in_input_order(self):
         names = [s["name"] for s in self.payload["sources"]]
-        want = [s["name"] for s in forecast.load_sources([EXAMPLE_CSV])]
+        want = [s["name"] for s in forecast.load_sources([GOLDEN_CSV])]
         self.assertEqual(names, want)
 
     def test_reports_used_matches_n(self):
@@ -2414,7 +2417,7 @@ class TestGolden(OfflineTestCase):
     GOLDEN = os.path.join(FIXTURES, "golden-mazatzal.json")
 
     def test_matches_the_recorded_payload(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         got = json.loads(out)
         with open(self.GOLDEN) as f:
             want = json.load(f)
@@ -2428,7 +2431,7 @@ class TestGolden(OfflineTestCase):
     def test_the_documented_headline_numbers(self):
         """Spelled out separately from the golden blob: these exact numbers appear
         in the README and in the PR history, so a change here is a docs change."""
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         by_name = {s["name"]: s for s in json.loads(out)["sources"]}
         kahuna = by_name["Big Kahuna Falls - Mazatzal Wilderness"]
         castersen = by_name["Castersen Seep"]
@@ -2490,11 +2493,11 @@ class TestVersioning(OfflineTestCase):
         self.assertNotIn("[error]", out)
 
     def test_every_payload_is_stamped(self):
-        payload = forecast.run(forecast.load_sources([EXAMPLE_CSV]), ASOF)
+        payload = forecast.run(forecast.load_sources([GOLDEN_CSV]), ASOF)
         self.assertEqual(payload["params"]["engine_version"], forecast.__version__)
 
     def test_the_cli_payload_is_stamped_too(self):
-        _, out, _ = run_cli([EXAMPLE_CSV, "--asof", "2026-07-13", "--format", "json"])
+        _, out, _ = run_cli([GOLDEN_CSV, "--asof", "2026-07-13", "--format", "json"])
         self.assertEqual(json.loads(out)["params"]["engine_version"], forecast.__version__)
 
     def test_pyproject_reads_the_version_from_the_module(self):
