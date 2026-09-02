@@ -459,8 +459,13 @@ The summary table is the part that leaves the terminal. `--format markdown` prin
 it — and only it — as Markdown:
 
 ```bash
-python3 forecast.py examples/mazatzal-wilderness.csv --asof 2026-07-13 --format markdown
+python3 forecast.py area.csv --asof 2026-07-13 --format markdown
 ```
+
+Illustrated below on the three sources this corpus began with. The shipped
+`examples/mazatzal-wilderness.csv` now holds 76, so its own table is a good deal
+longer — which is rather the point of having a format you can paste somewhere
+other than a terminal.
 
 ```markdown
 ## Water summary
@@ -765,7 +770,18 @@ Planned — the issue is where the detail and the open questions live:
 
 ## Example data
 
-`examples/mazatzal-wilderness.csv` — three Mazatzal Wilderness sources
-(Castersen Seep, Big Kahuna Falls, Chilson Spring) as a worked, multi-source
-example. The original raw reports they were normalized from live in
-`examples/raw/` as sample inputs for the skill.
+`examples/mazatzal-wilderness.csv` — the full Mazatzal Wilderness corpus: 76
+sources, 348 reports, 2008–2026. Most of it is one hiker's own triplog notes,
+placed against the USGS GNIS gazetteer and then corrected by hand; the three
+sources it began as (Castersen Seep, Big Kahuna Falls, Chilson Spring) also carry
+other reporters' observations. It has a `note` column holding the original report
+text — an extra column, ignored by the loader.
+
+Because every source in it has neighbours at the default 25 km `--pool-radius`,
+it exercises pooling in a way a handful of scattered sources cannot.
+
+The original raw reports for those first three live in `examples/raw/` as sample
+inputs for the skill. The same three are pinned separately as the test suite's
+golden input, `tests/fixtures/mazatzal-golden.csv` — the precip fixtures and
+`golden-mazatzal.json` are keyed to exactly their coordinates, so this corpus can
+grow without disturbing the golden payload.

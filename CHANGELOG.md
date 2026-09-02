@@ -12,9 +12,14 @@ code that produced it.
 
 ## Unreleased
 
-**No verdict changed.** The golden payload gained two keys and nothing else — no
-number in it moved, including the version string. What changed is what the output
-*admits*, and where it can be read.
+**No verdict changed *for the same input*.** The golden payload gained two keys
+and nothing else — no number in it moved, including the version string. What
+changed is what the output *admits*, and where it can be read.
+
+**But the shipped example is a different input now.** `examples/` grew from three
+sources to 76, and under pooling that moves its verdicts — see the entry below.
+The two claims are about different files, and the distinction is the point: the
+engine answers the same, it is being asked something bigger.
 
 **This release is breaking**: `--json` is removed in favour of `--format json`.
 
@@ -66,6 +71,29 @@ number in it moved, including the version string. What changed is what the outpu
   slice. Internal, and deliberately not a knob — naming it puts the boundary it
   creates in one visible place, and lets a future threshold derive from it instead
   of restating it. No behaviour change.
+- **`examples/mazatzal-wilderness.csv` is now the full Mazatzal corpus** — 76
+  sources and 348 reports (2008–2026), up from three sources and 233 reports.
+  The 115 added rows are one hiker's own triplog reports, transcribed from
+  screenshots of the trip logs. 28 further rows were *not* added: the source
+  pages had already contributed those same observations, matched on date, score
+  and status, and double-counting them would have quietly reweighted the three
+  sources that were already here. Coordinates came from the USGS GNIS gazetteer,
+  disambiguated by clustering each trip, then corrected by hand — 20 of the 76
+  were placed or moved that way, two of them by more than 12 km, because GNIS
+  pins a stream at its mouth and a report is rarely written there.
+
+  **Verdicts move, but only under pooling.** Unpooled, Castersen Seep and
+  Chilson Spring are byte-identical — not one of their reports changed — and Big
+  Kahuna Falls gains a single 2016-04-02 report. Pooled is another matter: at the
+  default 25 km radius those three went from two neighbours each to 61, 64 and
+  65, and neighbours are exactly what pooling consumes.
+  ([#38](https://github.com/jacobemerick/backcountry-water-oracle/pull/38))
+- **The test suite's golden input moved out of `examples/`** into
+  `tests/fixtures/mazatzal-golden.csv` (`GOLDEN_CSV`, formerly `EXAMPLE_CSV`).
+  The content is byte-identical to the old three-source file, so
+  `golden-mazatzal.json` and the precip fixtures are untouched. `examples/` is now
+  free to grow without dragging the golden payload along with it — and the
+  `build + install` CI smoke test follows it there, for the same reason.
 
 ### Not changed, on purpose
 

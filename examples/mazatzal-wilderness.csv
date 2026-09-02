@@ -1,234 +1,349 @@
-source,lat,lon,date,score,status
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-16,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-16,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-24,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-04-07,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-04-20,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-05-13,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-10-05,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2014-03-08,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2014-11-27,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-01-03,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-02-28,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-03-14,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-03-14,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-04-12,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-04-20,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-05-16,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-05-31,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-06-13,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-10-25,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-11-01,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-12-19,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-01-31,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-02-16,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-03-18,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-03-18,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-03,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-03,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-06,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-17,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-30,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-05-01,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-05-14,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-03,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-06,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-27,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-16,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-17,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-23,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-24,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-26,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-10-09,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-12-11,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-12-26,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-11,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-11,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-13,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-04,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-17,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-25,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-26,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-04-02,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-04-08,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-06,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-13,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-13,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-20,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-09-01,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-09-10,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-11-18,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-01-21,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-02-18,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-04-04,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-06-03,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-10-28,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-11-01,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-11-10,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-01-19,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-02-10,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-06,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-07,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-16,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-05-11,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-15,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-28,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-29,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-10-11,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-11-24,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-12-21,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-09,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-15,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-23,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-01,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-14,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-29,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-04-05,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-04-26,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-05-01,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-05-08,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-06-06,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-09-04,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-09-27,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-02-13,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-03-27,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-03-28,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-04-03,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-04-09,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-09-04,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-10-25,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-06,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-06,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-13,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-12-07,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-12-29,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-03-24,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-04-08,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-08-07,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-08-07,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-09-25,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-10-01,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-10-22,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-02-01,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-13,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-13,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-17,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-06-11,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-08-12,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-11-27,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-01-24,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-01-27,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-24,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-29,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-29,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-03-23,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-04-07,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-11-10,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-01-19,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-03-01,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-03-28,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-20,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-20,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-25,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-05-03,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-05-03,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-06-20,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-06-21,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-06,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-14,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-28,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-03,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-12,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-12,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-15,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-16,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-25,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-15,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-17,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-28,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-29,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-12-06,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-12-13,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-14,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-14,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-18,0.6,Medium flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-02-07,0.8,Heavy flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-04-10,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-04-10,0.4,Light flow
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-05-15,0.2,Pools to trickle
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry
-Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry
-Castersen Seep,34.09059,-111.46653,2008-09-01,0.0,Dry
-Castersen Seep,34.09059,-111.46653,2015-04-12,1.0,Gallon + per minute
-Castersen Seep,34.09059,-111.46653,2017-09-01,0.2,Dripping
-Castersen Seep,34.09059,-111.46653,2018-06-03,0.2,Dripping
-Castersen Seep,34.09059,-111.46653,2020-06-06,0.0,Dry
-Castersen Seep,34.09059,-111.46653,2025-04-25,0.6,Quart per minute
-Castersen Seep,34.09059,-111.46653,2025-05-24,0.2,Dripping
-Castersen Seep,34.09059,-111.46653,2025-10-16,1.0,Gallon + per minute
-Castersen Seep,34.09059,-111.46653,2025-10-25,0.6,Quart per minute
-Castersen Seep,34.09059,-111.46653,2025-11-28,1.0,Gallon + per minute
-Castersen Seep,34.09059,-111.46653,2025-12-06,0.8,Gallon per minute
-Castersen Seep,34.09059,-111.46653,2026-05-15,0.6,Quart per minute
-Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry
-Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry
-Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry
-Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2011-03-21,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2011-03-26,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2013-03-16,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2015-03-14,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2015-04-08,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2015-04-10,0.0,Dry
-Chilson Spring,34.08587,-111.49097,2016-01-30,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2016-04-02,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2016-04-06,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2016-04-09,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2016-09-23,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2017-02-11,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2017-02-20,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2017-03-17,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2017-11-10,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2018-06-03,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2018-11-01,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2019-01-09,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2019-03-04,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2019-03-16,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2019-03-16,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2019-09-29,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2019-10-11,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2019-11-12,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2019-11-24,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2020-01-09,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2020-04-26,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2020-06-06,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2020-09-27,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2021-04-03,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2021-04-09,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2021-10-15,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2021-11-14,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2021-11-14,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2021-12-05,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2022-04-08,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2022-04-23,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2022-09-23,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2022-10-22,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2023-03-13,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2023-03-13,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2023-11-27,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2024-01-27,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2024-02-29,0.6,Quart per minute
-Chilson Spring,34.08587,-111.49097,2024-02-29,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2024-03-23,0.8,Gallon per minute
-Chilson Spring,34.08587,-111.49097,2024-11-09,0.0,Dry
-Chilson Spring,34.08587,-111.49097,2025-08-30,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2025-10-15,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2025-10-24,1.0,Gallon + per minute
-Chilson Spring,34.08587,-111.49097,2026-04-10,0.2,Dripping
-Chilson Spring,34.08587,-111.49097,2026-04-10,0.2,Dripping
+source,lat,lon,date,score,status,note
+Bear Spring - Fisher,34.03787,-111.47654,2017-05-06,0.6,Quart per minute,"Full spring, lots of leaking around the base."
+Bear Spring - Fisher,34.03787,-111.47654,2017-05-20,0.6,Quart per minute,
+Bee Tree Tanks,34.31117,-111.64378,2018-12-05,0.4,26-50% full,Super muddy. A gang of elk were going to town in it.
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-16,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-16,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-03-24,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-04-07,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-04-20,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-05-13,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2013-10-05,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2014-03-08,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2014-11-27,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-01-03,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-02-28,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-03-14,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-03-14,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-04-12,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-04-20,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-05-16,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-05-31,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-06-13,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-10-25,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-11-01,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2015-12-19,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-01-31,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-02-16,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-03-18,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-03-18,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-02,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-03,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-03,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-06,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-17,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-04-30,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-05-01,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-05-14,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-03,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-06,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-08-27,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-16,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-17,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-23,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-24,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-09-26,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-10-09,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-12-11,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2016-12-26,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-11,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-11,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-02-13,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-04,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-17,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-25,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-03-26,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-04-02,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-04-08,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-06,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-13,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-13,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-05-20,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-09-01,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-09-10,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2017-11-18,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-01-21,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-02-18,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-04-04,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-06-03,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-10-28,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-11-01,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2018-11-10,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-01-19,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-02-10,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-06,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-07,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-03-16,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-05-11,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-15,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-28,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-09-29,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-10-11,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-11-24,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2019-12-21,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-09,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-15,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-01-23,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-01,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-14,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-03-29,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-04-05,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-04-26,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-05-01,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-05-08,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-06-06,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-09-04,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2020-09-27,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-02-13,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-03-27,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-03-28,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-04-03,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-04-09,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-09-04,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-10-25,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-06,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-06,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-11-13,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-12-07,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2021-12-29,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-03-24,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-04-08,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-08-07,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-08-07,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-09-25,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-10-01,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2022-10-22,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-02-01,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-13,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-13,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-03-17,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-06-11,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-08-12,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2023-11-27,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-01-24,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-01-27,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-24,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-29,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-02-29,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-03-23,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-04-07,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2024-11-10,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-01-19,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-03-01,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-03-28,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-20,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-20,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-04-25,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-05-03,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-05-03,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-06-20,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-06-21,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-06,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-14,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-09-28,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-03,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-12,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-12,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-15,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-16,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-10-25,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-15,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-17,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-28,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-11-29,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-12-06,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2025-12-13,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-14,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-14,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-01-18,0.6,Medium flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-02-07,0.8,Heavy flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-04-10,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-04-10,0.4,Light flow,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-05-15,0.2,Pools to trickle,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry,
+Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,Dry,
+Bills Tank,34.37336,-111.61402,2017-06-24,0.0,Dry,
+Brody Seep,34.07524,-111.48649,2017-05-06,0.6,Quart per minute,"Several large, clear pools that are easy to pull from."
+Brunson Tank,33.91574,-111.51509,2021-02-27,0.4,26-50% full,
+Brush Spring,34.18701,-111.54107,2017-12-29,0.0,Dry,
+Bull Spring,34.21544,-111.58384,2018-12-05,0.6,Quart per minute,"Both cement trough and metal ring were full of clear water, minimal green stuff near bottom, tasted great."
+Bull Tank,34.32829,-111.58255,2017-06-24,0.0,Dry,
+Bull Trap Spring,34.20849,-111.59290,2018-12-05,0.6,Quart per minute,"Plenty of shallow pools, tho Bull Spring up a ways seemed more appealing / dependable."
+Camp Creek @ Loading Corral,33.96836,-111.58632,2017-04-14,0.4,Light flow,
+Canyon Creek,34.19559,-111.69265,2018-11-11,0.0,Dry,"Dry at trail crossing, thought I heard something further upstream, didn't check."
+Castersen Seep,34.09059,-111.46653,2008-09-01,0.0,Dry,
+Castersen Seep,34.09059,-111.46653,2015-04-12,1.0,Gallon + per minute,
+Castersen Seep,34.09059,-111.46653,2017-09-01,0.2,Dripping,
+Castersen Seep,34.09059,-111.46653,2018-06-03,0.2,Dripping,
+Castersen Seep,34.09059,-111.46653,2020-06-06,0.0,Dry,
+Castersen Seep,34.09059,-111.46653,2025-04-25,0.6,Quart per minute,
+Castersen Seep,34.09059,-111.46653,2025-05-24,0.2,Dripping,
+Castersen Seep,34.09059,-111.46653,2025-10-16,1.0,Gallon + per minute,
+Castersen Seep,34.09059,-111.46653,2025-10-25,0.6,Quart per minute,
+Castersen Seep,34.09059,-111.46653,2025-11-28,1.0,Gallon + per minute,
+Castersen Seep,34.09059,-111.46653,2025-12-06,0.8,Gallon per minute,
+Castersen Seep,34.09059,-111.46653,2026-05-15,0.6,Quart per minute,
+Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry,
+Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry,
+Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,Dry,
+Chalk Tank,33.97771,-111.65191,2017-04-14,0.2,1-25% full,Dripping from under the roots.
+Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2010-10-29,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2011-03-21,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2011-03-26,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2013-03-16,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2015-03-14,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2015-04-08,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2015-04-10,0.0,Dry,
+Chilson Spring,34.08587,-111.49097,2016-01-30,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2016-04-02,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2016-04-06,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2016-04-09,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2016-09-23,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2017-02-11,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2017-02-11,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2017-02-20,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2017-03-17,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2017-11-10,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2018-06-03,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2018-11-01,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2019-01-09,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2019-03-04,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2019-03-16,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2019-03-16,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2019-09-29,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2019-10-11,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2019-11-12,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2019-11-24,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2020-01-09,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2020-04-26,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2020-06-06,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2020-09-27,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2021-04-03,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2021-04-09,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2021-10-15,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2021-11-14,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2021-11-14,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2021-12-05,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2022-04-08,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2022-04-23,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2022-09-23,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2022-10-22,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2023-03-13,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2023-03-13,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2023-11-27,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2024-01-27,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2024-02-29,0.6,Quart per minute,
+Chilson Spring,34.08587,-111.49097,2024-02-29,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2024-03-23,0.8,Gallon per minute,
+Chilson Spring,34.08587,-111.49097,2024-11-09,0.0,Dry,
+Chilson Spring,34.08587,-111.49097,2025-08-30,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2025-10-15,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2025-10-24,1.0,Gallon + per minute,
+Chilson Spring,34.08587,-111.49097,2026-04-10,0.2,Dripping,
+Chilson Spring,34.08587,-111.49097,2026-04-10,0.2,Dripping,
+Club Spring - Table Mountain Quad,34.04480,-111.53866,2016-03-05,0.2,Dripping,"One full pool, dripping below. Some water was being diverted into horse trough at cabins."
+Club Spring - Table Mountain Quad,34.04480,-111.53866,2017-09-01,0.6,Quart per minute,"Main hole was full, pools/trickles went almost halfway to cabin."
+Club Spring - Table Mountain Quad,34.04480,-111.53866,2017-11-18,0.6,Quart per minute,
+Copper Camp Creek,33.96337,-111.61070,2017-04-14,0.6,Medium flow,"Big pools, clear flowing water."
+Deadman Tank,34.36392,-111.64739,2017-06-24,0.0,Dry,
+Deer Creek / Canyon - Mazatzal Wilderness,34.04842,-111.37987,2017-05-20,0.2,Pools to trickle,"Lots of dry sections, but where the pools were they were clear and welcoming."
+Dog Spring,34.03655,-111.58221,2017-09-01,0.0,Dry,
+Dry Wash,34.09920,-111.69903,2017-11-05,0.0,Dry,"Like, super dry."
+Dutchman Grave Spring,34.11578,-111.64245,2018-06-09,0.2,Dripping,Several medium-sized pools. Water had an ugly slick on it.
+East Verde River,34.28642,-111.66487,2018-12-05,0.6,Medium flow,"Plenty of water, though there are still dry crossing spots if you hunt for a bit."
+Fig Spring,33.92730,-111.63110,2018-02-11,0.6,Quart per minute,Dripping/pouring down the bank and created a steady stream down into Sheep Creek.
+Fig Trail Spring,33.94449,-111.66527,2018-02-11,0.2,Dripping,"Good dripping flow from source of spring heading down the wash. Several large pools, including rock tanks, of clear water, more than deep enough to pull from."
+Fisher Spring,34.04435,-111.47851,2017-05-06,0.0,Dry,
+Fisher Tank,34.04448,-111.47847,2017-05-06,0.0,Dry,
+Fuller Seep,34.15547,-111.54731,2017-12-29,0.2,Dripping,"Several small pools of clear water w/ some green stuff on bottom, easy to filter from, barely dripping from pool to pool before sucked back into the ground."
+Garden Seep,34.09202,-111.43476,2025-10-16,0.6,Quart per minute,Healthy flow over trail.
+Garden Seep,34.09202,-111.43476,2026-05-15,0.0,Dry,At least along the trail.
+Goat Camp Canyon,34.24675,-111.69205,2018-12-05,0.0,Dry,
+Hardscrabble Creek,34.31642,-111.66570,2017-06-24,0.0,Dry,No flow at the mouth. Did not venture upstream to check.
+Hawaiian Mist,34.08731,-111.44485,2016-09-23,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2017-05-06,0.4,Light flow,
+Hawaiian Mist,34.08731,-111.44485,2017-09-01,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2017-11-18,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2018-06-03,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2025-06-21,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2025-09-06,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2025-09-14,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2025-10-03,0.2,Pools to trickle,Good trickle over the trail.
+Hawaiian Mist,34.08731,-111.44485,2025-10-16,0.4,Light flow,
+Hawaiian Mist,34.08731,-111.44485,2025-11-15,0.2,Pools to trickle,"Small trickle across the trail, you could probably find a pool deep enough to pull from."
+Hawaiian Mist,34.08731,-111.44485,2025-11-28,0.6,Medium flow,
+Hawaiian Mist,34.08731,-111.44485,2025-12-06,0.2,Pools to trickle,Slowing down.
+Hawaiian Mist,34.08731,-111.44485,2026-05-15,0.0,Dry,
+Hawaiian Mist,34.08731,-111.44485,2026-06-30,0.0,Dry,
+Hopi Spring,34.12118,-111.48583,2016-04-02,0.2,Dripping,"Large seep, overflowing and making some mud across AZT."
+Hopi Spring,34.12118,-111.48583,2016-09-23,0.0,Dry,
+Horse Camp Seep,34.11288,-111.49219,2016-04-02,0.6,Quart per minute,Both the seep and creek had water flowing through the tanks.
+Horse Camp Seep,34.11288,-111.49219,2016-09-23,0.2,Dripping,"Well, technically the seep was dry, but there were plenty of standing pools along Deadman that were deep enough."
+Horse Camp Seep,34.11288,-111.49219,2017-09-01,0.2,Dripping,Tanks were lowest I've seen them.
+Horse Creek,34.07781,-111.70570,2017-11-05,0.0,Dry,
+Horse Creek,34.07781,-111.70570,2018-06-09,0.0,Dry,
+Hot Spring - Sheep Bridge,34.07766,-111.70850,2018-06-09,0.8,Gallon per minute,"Full, steadily splashing out of the overflow. Lukewarm and clean."
+Lizard Spring,33.99438,-111.58757,2017-04-14,0.6,Quart per minute,Good flow above and along spring.
+Lost Spring,34.10539,-111.55684,2018-09-03,0.2,Dripping,"Two separate sources next to each other, both fouled by elk. One of them I'd consider pulling, though it'd take some patience."
+Lower Dutchman Grave Spring,34.11533,-111.64826,2018-06-09,0.2,Dripping,There were a few holes that you could squeeze a cup in. Had to hunt to find them.
+Lower Dutchman Grave Spring,34.11533,-111.64826,2018-09-03,0.6,Quart per minute,"Multiple deep pools for filtering, flowing from one to the next."
+Middle Red Creek,34.17115,-111.75654,2017-11-05,0.6,Medium flow,Surprisingly clear and robust flow along the length.
+Middle Red Creek,34.17115,-111.75654,2018-11-11,0.6,Medium flow,"Nice and clear. Only one section of dry bed, otherwise flow all the way to Verde River."
+Mineral Creek,34.16615,-111.42708,2017-03-26,0.6,Medium flow,
+Mineral Spring,34.17429,-111.46236,2017-03-26,0.6,Quart per minute,
+Mountain Spring - Mazatzal,34.10090,-111.57270,2017-09-01,0.2,Dripping,"Some trickle along creek, cement trough was full (and quite green)."
+Mountain Spring - Mazatzal,34.10090,-111.57270,2018-06-09,0.2,Dripping,"Cement trough was 3/4 full of green, stagnant water. Taste was hard to get past."
+Mountain Spring - Mazatzal,34.10090,-111.57270,2018-09-03,0.2,Dripping,"Murky, unpleasant taste and odor. Probably the worst I've seen it."
+Pete's Pond,34.14807,-111.50499,2017-03-26,0.8,76-100% full,
+Pigeon Spring,34.00292,-111.44486,2017-05-20,0.2,Dripping,"Small pools below spring, trough was maybe 1/2 full of pea soup."
+Pigeon Spring,34.00292,-111.44486,2017-07-08,0.2,Dripping,"Murky and green, could be filtered in a pinch (I wouldn't)."
+Pole Hollow Spring,34.18743,-111.45299,2017-03-26,0.8,Gallon per minute,
+Polk Spring,34.23508,-111.50960,2018-12-05,0.8,Gallon per minute,"Beautiful area, lots and lots of water."
+Red Creek Rapids,34.16170,-111.72070,2017-11-05,0.8,Heavy flow,"Over 2' deep in middle, challenging to cross."
+Red Creek Rapids,34.16170,-111.72070,2018-11-11,0.8,Heavy flow,"Over 2' deep, challenging to cross."
+Red Metal Tank,34.21105,-111.55780,2018-12-05,0.0,Dry,Nothing.
+Red Rock Spring,34.05175,-111.53538,2017-11-18,0.6,Quart per minute,"Flowing right across Davenport Wash Trail crossing, most convenient."
+Red Saddle Tank,34.25725,-111.51990,2018-12-05,0.6,51-75% full,"Lots of mud, murky water would be hard to reach and totally not worth it."
+Rock Creek,34.22920,-111.51320,2018-12-05,0.8,Heavy flow,Almost as much water flowing into the E Verde as... the E Verde itself.
+Rock Creek Falls - Mazatzal Wilderness,34.12599,-111.46929,2016-09-23,0.2,Pools to trickle,Few pools right next to trail crossing. Water was murky but filtered just fine. No trickles.
+Rock Spring,34.04226,-111.56181,2016-03-05,0.0,Dry,
+Rock Spring,34.04226,-111.56181,2017-09-01,0.0,Dry,
+Rock Spring,34.04226,-111.56181,2017-11-18,0.0,Dry,
+Round Spring,34.00082,-111.55751,2017-04-14,0.6,Quart per minute,Overflowing spring.
+Round Spring,34.00082,-111.55751,2017-11-18,0.0,Dry,
+SE 5395 Spring,34.18537,-111.49604,2017-03-26,0.6,Quart per minute,
+SE 5395 Spring,34.18537,-111.49604,2017-12-29,0.0,Dry,
+Saddle Ridge Pasture Tank,34.35103,-111.55290,2018-12-05,0.8,76-100% full,
+Sears TH Spring,33.97755,-111.67272,2017-04-14,0.2,Dripping,Ugly green ponds of water.
+Sheep Creek,33.91800,-111.65136,2018-02-11,0.6,Medium flow,"Was flowing great near Fig Cabin, dries up about 1/2 mile downstream."
+Sheep Creek - Upper SE Fork,33.99828,-111.55565,2017-04-14,0.4,Light flow,
+Sheep Creek - Upper SE Fork,33.99828,-111.55565,2017-11-18,0.0,Dry,
+Sheep Creek Seep,33.99468,-111.54877,2017-04-14,0.6,Quart per minute,
+South Fork Deer Creek,34.03722,-111.38950,2017-07-08,0.2,Pools to trickle,Pools as high as 5500'.
+Spring Wash,34.11587,-111.71542,2017-11-05,0.0,Dry,"Some huge sycamores, but no water, at crossing."
+Squaw Flat Spring,33.97048,-111.51903,2017-04-14,0.0,Dry,No sign of dampness or spring.
+Squaw Flat Spring,33.97048,-111.51903,2017-06-11,0.0,Dry,
+Squaw Flat Spring,33.97048,-111.51903,2017-11-18,0.0,Dry,
+Strawberry Creek,34.39031,-111.55403,2017-06-24,0.2,Pools to trickle,"Some promising pools where it flows into Hardscrabble, under the powerlines."
+Sycamore Creek,34.07856,-111.70440,2017-11-05,0.0,Dry,
+Sycamore Creek,34.07856,-111.70440,2018-06-09,0.0,Dry,
+Sycamore Creek,34.07856,-111.70440,2018-09-03,0.4,Light flow,Looks great at Verde River #11 crossing.
+Sycamore Creek @ Dutchman Grave Trail,34.11668,-111.65525,2018-06-09,0.0,Dry,
+Sycamore Creek @ Dutchman Grave Trail,34.11668,-111.65525,2018-09-03,0.0,Dry,
+Thicket Spring,33.99087,-111.48458,2017-06-11,0.0,Dry,Dry at spring. Water can be found downstream along Cornucopia Trail.
+Upper McFarland @ #88/95,33.96905,-111.50807,2017-06-11,0.2,Pools to trickle,Pools below junction.
+Upper McFarland @ #88/95,33.96905,-111.50807,2017-11-18,0.2,Pools to trickle,"Two large pools with clean, clear water."
+Upper Sheep Creek Spring,33.92500,-111.52056,2021-02-27,0.0,Dry,One sad pool spotted above marked spring.
+Wet Bottom Creek,34.15309,-111.71209,2017-11-05,0.2,Pools to trickle,"Only saw one small pool at trail crossing, no trickle."
+Wet Bottom Creek - Red Hills #262,34.15939,-111.57543,2017-12-29,0.2,Pools to trickle,"Two tiny, stagnant pools above the trail crossing, barely worth mentioning."
+Wet Bottom Creek - Red Hills #262,34.15939,-111.57543,2018-09-03,0.6,Medium flow,Amazing.
+Whiterock Spring,34.26964,-111.51859,2018-12-05,0.8,Gallon per minute,"Tank was overflowing with clear, cold water."
+Willow Spring,34.09082,-111.59829,2018-06-09,0.6,Quart per minute,"Several pools trickling into each other. Water was clear and tasted great. Lots of water bugs, bees, wasps, and hawks to share the space with."
+Windsor Spring,34.05783,-111.46880,2017-05-06,0.2,Dripping,Few stagnant pools.
+Y Bar Spring,34.05646,-111.45440,2016-04-02,0.6,Quart per minute,Running right across the trail.
+Y Bar Spring,34.05646,-111.45440,2017-05-06,0.2,Dripping,"Actual marked spring was dry. Another one, few yards to the west, was dripping and flowing across the trail. No good spots to pull/collect from."
