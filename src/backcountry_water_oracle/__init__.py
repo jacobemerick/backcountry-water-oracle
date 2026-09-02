@@ -160,6 +160,14 @@ POOL_RADIUS_KM = 25.0   # default neighborhood radius for pooling (see pool_cont
 # wearing the same name, and the engine would silently correlate one against the
 # other's weather.
 COORD_TOLERANCE_KM = 1.0
+# How many past reports the as-of read averages: the ANALOG_K reports whose antecedent
+# rain sat closest to today's (see finalize). It was a bare `5` in the slice, which hid
+# the boundary it creates -- at n <= ANALOG_K the "nearest" analogs are every report the
+# source has, the sort selects nothing, and the prediction is the source's mean flow on
+# any date, rain or no rain. That is not a tuning knob so much as the width of the
+# window through which a source is allowed to disagree with itself, so it is named and
+# the payload reports what it actually drew on (`analog_n`, `pred_is_constant`).
+ANALOG_K = 5
 
 # --------------------------------------------------------------------------- #
 # Input: normalized CSV -> sources
@@ -1014,8 +1022,16 @@ def finalize(b):
     asof_eff = min(b["asof_req"], idx["last"])
     curval = window_sum(idx, asof_eff, best_w)
     hist = sorted(((window_sum(idx, d, best_w), s) for d, s in recs),
-                  key=lambda t: abs(t[0] - curval))[:5]
+                  key=lambda t: abs(t[0] - curval))[:ANALOG_K]
     pred = sum(s for _, s in hist) / len(hist)
+    # What the average actually drew on, and whether the selection did any work. When
+    # the pool is the whole history, `curval` has been computed and then discarded:
+    # every date produces the same `pred`, so this source's verdict cannot respond to
+    # rain at all. It is still the honest best guess from what was reported -- it just
+    # is not a forecast in the sense the other fields imply, and nothing in the payload
+    # said so. #39.
+    analog_n = len(hist)
+    pred_is_constant = analog_n == b["n"]
     return {"name": b["name"], "lat": b["lat"], "lon": b["lon"],
             "n": b["n"], "pct_dry": b["pct_dry"], "mean": b["mean"],
             "n_total": b["n_total"], "n_early": b["n_early"], "n_late": b["n_late"],
@@ -1028,6 +1044,7 @@ def finalize(b):
             "borrowed_at_best": b["borrowed"][best], "group_n": b["group_n"],
             "type": classify(b["pct_dry"], best_w),
             "curval": curval, "pred": pred, "asof": asof_eff, "n_harm": b["n_harm"],
+            "analog_n": analog_n, "pred_is_constant": pred_is_constant,
             "by_month": b["by_month"], "rain_pct": b["rain_pct"],
             "radar": b["radar"]}
 
@@ -1239,6 +1256,14 @@ def print_source(a):
           f"nearest-analog flow ~{a['pred']:.2f} (0-1)")
     print(f"  VERDICT: {running_phrase(a['pred'])}"
           + ("   [small n - weak confidence]" if a['n'] < 25 else ""))
+    # The verdict above looks exactly like every other verdict; at n <= ANALOG_K it
+    # is a different kind of statement, and only this line says so.
+    if a["pred_is_constant"]:
+        print(f"     NOTE: the average is every report this source has ({a['n']}), not "
+              f"the {ANALOG_K} nearest\n"
+              f"           analogs -- so it reads the same on EVERY date, and the "
+              f"{a['curval']:.2f}\" above\n"
+              f"           did not move it. This is the record, not a forecast.")
     print_radar_check(a)
     print_rain_block(a)
 
@@ -1255,8 +1280,13 @@ def print_table(rows, precip=DEFAULT_PRECIP):
         for a in scored:
             nm = (a["name"][:24] + "..") if len(a["name"]) > 26 else a["name"]
             pool = (f"{a['borrowed_at_best']*100:.0f}%" if a["group_n"] > 1 else "-").rjust(6)
+            # The table is sorted by %dry, so a source with one non-dry report sorts
+            # to the TOP -- the least-evidenced read presented as the most reliable.
+            # `N` alone does not say that the read is structurally constant; the star
+            # does, and it is the one place the sort can be second-guessed at a glance.
+            star = " *" if a["pred_is_constant"] else ""
             print(f"{nm:<26}{a['n']:>4}{a['pct_dry']:>5}%{a['best']:>7}"
-                  f"{a['best_ctrl_r']:>+7.2f}{pool}   {running_phrase(a['pred'])}")
+                  f"{a['best_ctrl_r']:>+7.2f}{pool}   {running_phrase(a['pred'])}{star}")
     if rain_only:
         wname = f"{WINDOWS[1]}d"
         print(f"\nNO VERDICT -- no usable reports. Rain context only (in full above):")
@@ -1270,6 +1300,9 @@ def print_table(rows, precip=DEFAULT_PRECIP):
         print("sources where they agree -- the trustworthy one. POOL = % of r* borrowed from")
         print("neighbors ('-' = none in range; --no-pool disables pooling entirely).")
         print("Type key: <=10% dry = buffered/reliable; flashy = short-window + often dry.")
+        if any(a["pred_is_constant"] for a in scored):
+            print(f"* = read off every report the source has (n <= {ANALOG_K}), so it is the same")
+            print("on every date and rain cannot move it -- the record, not a forecast.")
     # The standing monsoon caveat is about ERA5 specifically, so it stops being
     # true the moment --precip picks something else -- say which product answered
     # instead, and let the [caveat] note above carry that product's own limits.
@@ -1351,6 +1384,17 @@ def source_json(a):
         "precip_in": None if zero else round(a["curval"], 3),
         "predicted_flow": None if zero else _r4(a["pred"]),
         "verdict": None if zero else running_phrase(a["pred"]),
+        # How many past reports `predicted_flow` averaged (at most ANALOG_K), and
+        # whether that average is the source's ENTIRE history. When it is -- always
+        # at n <= ANALOG_K -- `precip_in` was computed and then discarded: the same
+        # number comes back on every date, so the verdict cannot respond to rain.
+        # It is the honest read of what was reported and is not a forecast, and the
+        # distinction is invisible from `verdict` alone, which is why it is a key.
+        # `small_n` does not cover this: it is n < 25, and marks a read as coarse,
+        # not as structurally constant. Most real sources are in here -- suppress,
+        # caveat or show it, but decide knowingly.
+        "analog_n": None if zero else a["analog_n"],
+        "pred_is_constant": None if zero else a["pred_is_constant"],
         "harmonics": a["n_harm"],
         # Rain vs this site's own record, for every source -- and the ONLY analysis
         # available when n == 0. Never a flow verdict: see rain_percentiles().

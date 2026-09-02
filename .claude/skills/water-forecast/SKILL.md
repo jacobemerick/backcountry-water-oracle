@@ -92,6 +92,7 @@ a new input format — adapt the input to the schema instead.
    | how much is borrowed | `best.borrowed` (× 100 = %), `best.group_n` |
    | is the signal real | `best.signal_check`, `best.raw_r` vs `best.own_ctrl_r` |
    | how shaky | `small_n` (true = < 25 reports — flag it out loud) |
+   | whether it can move at all | `pred_is_constant` (true = say so; see below) |
    | how much data was usable | `reports.total` vs `reports.used` |
    | how unusual the run-up is | `rain_percentiles` (see below) |
 
@@ -175,6 +176,32 @@ Three rules:
   dry", "about normal", "unusually wet" is the honest resolution.
 - `pct` may be `null` (a window no earlier year covers) — say nothing rather than
   guessing.
+
+## Sources with too few reports (`pred_is_constant`)
+
+One report up from nothing is not one step up from nothing. `predicted_flow` is
+the average of the **5 past reports whose antecedent rain best matched today's**
+(`analog_n` says how many it actually found). When a source has 5 reports or
+fewer, those "nearest" analogs are *every* report it has: the selection does no
+work, and the source returns **the same number on every date** no matter what the
+rain did. `pred_is_constant: true` marks exactly that case.
+
+It is not a broken number — it is the honest average of what was reported — but
+it is not a forecast, and it will look like one if you present it like one. Most
+real sources are in here.
+
+- **When `pred_is_constant` is true, say so in the same breath as the verdict**,
+  and never present it as a response to conditions: *"the one report this seep has
+  says light flow — that's the record, not a read on this week's rain, and it will
+  say the same thing in April."*
+- **Do not lean on `type` there either.** `Reliable (groundwater-buffered)` comes
+  from `pct_dry`, computed on the same tiny sample: one non-dry observation is
+  enough to earn it. Give the count instead of the label — *"one report, not dry"*
+  beats *"reliable"*.
+- `small_n` is a different, weaker statement (fewer than 25 reports = coarse). A
+  source can be `small_n` and still respond to rain. Check both.
+- `rain_percentiles` is genuinely informative here, since it needs no reports at
+  all — but it stays context, never a flow call (see above).
 
 ## Sources with no reports
 

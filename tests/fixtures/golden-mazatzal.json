@@ -103,6 +103,8 @@
       "precip_in": 0.548,
       "predicted_flow": 0.36,
       "verdict": "Probably has water (light flow / pools)",
+      "analog_n": 5,
+      "pred_is_constant": false,
       "harmonics": 1,
       "rain_percentiles": {
         "30d": {
@@ -227,6 +229,8 @@
       "precip_in": 0.863,
       "predicted_flow": 0.12,
       "verdict": "Marginal - pools/dripping at best",
+      "analog_n": 5,
+      "pred_is_constant": false,
       "harmonics": 1,
       "rain_percentiles": {
         "30d": {
@@ -354,6 +358,8 @@
       "precip_in": 1.352,
       "predicted_flow": 0.28,
       "verdict": "Marginal - pools/dripping at best",
+      "analog_n": 5,
+      "pred_is_constant": false,
       "harmonics": 1,
       "rain_percentiles": {
         "30d": {

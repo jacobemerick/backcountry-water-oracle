@@ -1451,6 +1451,137 @@ class TestNearestAnalog(OfflineTestCase):
 
 
 # =========================================================================== #
+# The analog pool at low n -- issue #39
+#
+# `[:ANALOG_K]` creates a boundary nothing in the payload used to mention: once a
+# source has ANALOG_K reports or fewer, the "nearest" analogs are all of them, the
+# sort selects nothing, and the read is the source's mean flow on every date --
+# a verdict that rain cannot move, printed in the same shape as one that responds.
+# The number is not wrong. It is a different kind of statement, and these tests
+# pin the two keys that say which kind it is.
+# =========================================================================== #
+class TestDegenerateAnalogPool(OfflineTestCase):
+    """A climbing precip series: every window sum rises with the date, so two
+    as-ofs far apart genuinely differ in antecedent rain. Any source that can
+    respond to rain must read differently at the two; one that cannot, cannot."""
+    START, DAYS = date(2024, 1, 1), 700
+
+    def setUp(self):
+        super().setUp()
+        series = {"daily": {
+            "time": [(self.START + timedelta(days=i)).isoformat() for i in range(self.DAYS)],
+            "precipitation_sum": [round(i * 0.002, 4) for i in range(self.DAYS)]}}
+        forecast.PRECIP_PROVIDER = lambda lat, lon, end, use_cache=True: series
+
+    def read(self, n_reports, asof_day):
+        """A source with n_reports spread over the record, read at one as-of.
+
+        Scores rise with the date, alongside the rain. A source that reads its
+        nearest analogs therefore MUST answer differently early and late; equality
+        is then evidence about the pool, not a coincidence of the scores."""
+        reports = [(self.START + timedelta(days=100 + i * 40),
+                    round(i / max(1, n_reports - 1), 4)) for i in range(n_reports)]
+        return forecast.analyze(source(reports=reports),
+                                self.START + timedelta(days=asof_day))
+
+    def test_at_or_below_ANALOG_K_the_read_cannot_respond_to_rain(self):
+        for n in range(1, forecast.ANALOG_K + 1):
+            dry, wet = self.read(n, 300), self.read(n, 699)
+            self.assertLess(dry["curval"], wet["curval"], f"n={n}: rain did not differ")
+            self.assertEqual(dry["pred"], wet["pred"], f"n={n}: identical read expected")
+            self.assertTrue(dry["pred_is_constant"], f"n={n}")
+
+    def test_above_ANALOG_K_it_does(self):
+        dry, wet = self.read(12, 300), self.read(12, 699)
+        self.assertNotEqual(dry["pred"], wet["pred"])
+        self.assertFalse(dry["pred_is_constant"])
+
+    def test_the_boundary_sits_exactly_at_ANALOG_K(self):
+        self.assertTrue(self.read(forecast.ANALOG_K, 699)["pred_is_constant"])
+        self.assertFalse(self.read(forecast.ANALOG_K + 1, 699)["pred_is_constant"])
+
+    def test_analog_n_is_what_the_average_actually_drew_on(self):
+        for n in (1, 3, forecast.ANALOG_K, forecast.ANALOG_K + 1, 20):
+            a = self.read(n, 699)
+            self.assertEqual(a["analog_n"], min(n, forecast.ANALOG_K), f"n={n}")
+
+    def test_a_constant_read_is_the_mean_of_every_score(self):
+        """Not an approximation of one: when the pool is the whole history the
+        analog average IS the mean, which is the thing worth disclosing."""
+        a = self.read(3, 699)
+        self.assertAlmostEqual(a["pred"], a["mean"])
+
+    def test_ANALOG_K_drives_the_slice_rather_than_a_literal(self):
+        """The point of naming it (#39, option C): the width is one place now."""
+        original = forecast.ANALOG_K
+        try:
+            forecast.ANALOG_K = 3
+            self.assertEqual(self.read(10, 699)["analog_n"], 3)
+            self.assertTrue(self.read(3, 699)["pred_is_constant"])
+        finally:
+            forecast.ANALOG_K = original
+
+    def test_small_n_does_not_already_say_this(self):
+        """n < 25 marks a read as coarse. It does not separate coarse from
+        structurally constant, which is why a second key was needed."""
+        payload = forecast.run([source(reports=[
+            (self.START + timedelta(days=100 + i * 40), (i % 3) / 2) for i in range(10)])],
+            self.START + timedelta(days=699))
+        s = payload["sources"][0]
+        self.assertTrue(s["small_n"])
+        self.assertFalse(s["pred_is_constant"])
+
+    def test_the_payload_carries_both_keys(self):
+        payload = forecast.run([source(reports=[(self.START + timedelta(days=200), 0.4)])],
+                               self.START + timedelta(days=699))
+        s = payload["sources"][0]
+        self.assertEqual(s["analog_n"], 1)
+        self.assertTrue(s["pred_is_constant"])
+        self.assertEqual(s["predicted_flow"], 0.4)
+
+    def test_a_source_with_no_reports_gets_null_not_false(self):
+        """`false` would assert something about a read that does not exist. n == 0
+        keeps every key null, the way #8 established."""
+        s = forecast.run(forecast.load_sources_from(
+            [io.StringIO("source,lat,lon,date,score\nPin,34.09,-111.47,,\n")]),
+            self.START + timedelta(days=699))["sources"][0]
+        self.assertIsNone(s["analog_n"])
+        self.assertIsNone(s["pred_is_constant"])
+
+    def test_the_text_report_says_so_beside_the_verdict(self):
+        csv = ("source,lat,lon,date,score\n"
+               "One,34.09,-111.47,2024-04-10,0.4\n")
+        _, out, _ = run_cli(["-", "--asof", "2025-12-01", "--radar", "none"],
+                            stdin_text=csv)
+        self.assertIn("VERDICT:", out)
+        self.assertIn("every report this source has (1)", out)
+        self.assertIn("the record, not a forecast", out)
+
+    def test_and_stays_quiet_where_the_read_is_a_real_one(self):
+        reports = "".join(f"One,34.09,-111.47,{(self.START + timedelta(days=100 + i * 40)).isoformat()},{(i % 3) / 2}\n"
+                          for i in range(12))
+        _, out, _ = run_cli(["-", "--asof", "2025-12-01", "--radar", "none"],
+                            stdin_text="source,lat,lon,date,score\n" + reports)
+        self.assertIn("VERDICT:", out)
+        self.assertNotIn("the record, not a forecast", out)
+
+    def test_the_summary_table_stars_a_constant_read(self):
+        """The table sorts by %dry, so one non-dry report ranks FIRST -- the least
+        evidenced read presented as the most reliable. The star is the correction."""
+        csv = ("source,lat,lon,date,score\n"
+               "Once,34.09,-111.47,2024-04-10,0.6\n"
+               + "".join(f"Often,34.09,-111.45,{(self.START + timedelta(days=100 + i * 40)).isoformat()},{(i % 3) / 2}\n"
+                         for i in range(12)))
+        _, out, _ = run_cli(["-", "--asof", "2025-12-01", "--radar", "none"],
+                            stdin_text=csv)
+        table = out[out.index("SUMMARY"):]
+        starred = [ln for ln in table.splitlines() if ln.rstrip().endswith(" *")]
+        self.assertEqual(len(starred), 1)
+        self.assertTrue(starred[0].startswith("Once"))
+        self.assertIn("rain cannot move it", table)
+
+
+# =========================================================================== #
 # Report accounting -- issue #10
 # =========================================================================== #
 class TestReportAccounting(OfflineTestCase):
@@ -1979,6 +2110,7 @@ class TestJsonSchema(OfflineTestCase):
             "name", "lat", "lon", "n", "small_n", "reports", "pct_dry", "mean_flow",
             "annual_precip_in", "type", "mean_flow_by_month", "correlations", "best",
             "asof", "precip_in", "predicted_flow", "verdict", "harmonics",
+            "analog_n", "pred_is_constant",
             "rain_percentiles", "neighbors", "neighbors_disagree",
             "radar_check"]))
 

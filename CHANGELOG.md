@@ -10,6 +10,50 @@ twice. So every release below says explicitly whether verdicts moved, and every
 payload carries `params.engine_version` so a stored forecast can be traced to the
 code that produced it.
 
+## Unreleased
+
+**No verdict changed.** The golden payload gained two keys and nothing else — no
+number in it moved, including the version string. What changed is what the output
+*admits*.
+
+### Added
+
+- **`analog_n` and `pred_is_constant`** per source, and a `NOTE` under the verdict
+  plus a `*` on the summary row that say the same thing in the text report.
+
+  The as-of read averages the `ANALOG_K` (5) past reports whose antecedent rain
+  best matched today's. **At `n <= 5` those are every report the source has** —
+  the sort selects nothing, the current rain is computed and discarded, and the
+  source returns its mean flow on every date, in the same shape as a verdict that
+  responds. `analog_n` says how many reports the average actually drew on;
+  `pred_is_constant` is true when that was the whole history. Both are `null` at
+  `n == 0`, like every other verdict-derived key.
+
+  `small_n` did not already cover it: `n < 25` says a read is *coarse*, not that
+  it is *structurally constant*, and a source can be the former without being the
+  latter. This is not an edge case — 72 of the 76 sources in the Mazatzal corpus
+  sit at `n <= 5`, 51 of them at exactly one report.
+  ([#39](https://github.com/jacobemerick/backcountry-water-oracle/issues/39))
+
+### Changed
+
+- **The analog pool width is `ANALOG_K`, not a literal `5`** in the `finalize()`
+  slice. Internal, and deliberately not a knob — naming it puts the boundary it
+  creates in one visible place, and lets a future threshold derive from it instead
+  of restating it. No behaviour change.
+
+### Not changed, on purpose
+
+- **`type` still reports at low `n`.** `Reliable (groundwater-buffered)` from one
+  non-dry observation is arguably the most misleading field in the payload, but
+  withholding it would *move a value*, and this release moves none. It is flagged
+  in the README and the skill instead, for a consumer to caveat on its own terms.
+- **Sources at `n <= 5` still get a verdict.** Routing them down
+  `finalize_rain_only()` is what #8's reasoning implies and is #39's option A. It
+  would move verdicts for the large majority of real sources, which by this
+  repo's own standard is a method change deserving its own release and its own
+  before/after measurement.
+
 ## 0.2.0 — 2026-08-11
 
 Precipitation products, and sources with no reports.
